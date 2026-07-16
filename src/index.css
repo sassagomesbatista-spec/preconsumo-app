@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+* { box-sizing: border-box; }
+
+:root {
+  --cream:    #F5EFE4;
+  --white:    #FFFFFF;
+  --charcoal: #2D2926;
+  --muted:    #7A6E67;
+  --border:   #E5DDD5;
+  --lavender: #C8BDD8;
+  --rose:     #D4B0B8;
+  --beige:    #C8B89C;
+  --sage:     #B4C4A8;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--cream);
+  color: var(--charcoal);
+}
+
+#root { width: 100%; min-height: 100vh; }
