@@ -99,19 +99,27 @@ useEffect(() => {
 
   // Autosave na nuvem (histórico compartilhado) — debounced
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savingRef = useRef(false)
   useEffect(() => {
     if (!result) return
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
+      // Evita disparar um segundo "criar projeto" (id ainda nulo) enquanto o
+      // primeiro salvamento da importação ainda não voltou do servidor.
+      if (savingRef.current) return
+      savingRef.current = true
       saveProject.mutate({
         id: currentProjectId ?? undefined,
         clientName, colecao,
         dataJson: JSON.stringify({ ...result, rows, clientName, colecao }),
         pricingJson: pricingConfig ? JSON.stringify(pricingConfig) : undefined,
-      })
+      }, { onSettled: () => { savingRef.current = false } })
     }, 1500)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
-  }, [result, rows, clientName, colecao, pricingConfig, currentProjectId, saveProject])
+    // saveProject (objeto da mutation) muda de identidade a cada chamada —
+    // inclui-lo aqui faz o efeito reagendar o salvamento sem parar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, rows, clientName, colecao, pricingConfig, currentProjectId])
 
   const handleFile = useCallback(async (file: File) => {
     setLoading(true); setError(null)
