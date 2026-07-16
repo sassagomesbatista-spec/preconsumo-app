@@ -308,11 +308,13 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
       Object.entries(plm.tecidos).forEach(([nome,info])=>{
         nt[nome]={...info,gramatura:nt[nome]?.gramatura??info.gramatura}
       })
+      // Substitui (não acumula) os aviamentos de cada tipo de peça pelos do
+      // arquivo importado — a config de precificação persiste num cofre
+      // global (prec-v9), então sem isso sobras de um cliente antigo
+      // ficavam grudadas nos imports seguintes.
       const mergedOC={...p.outrosCustos}
       Object.entries(plm.outrosCustos).forEach(([tp,itens])=>{
-        const ex=mergedOC[tp]??[]
-        const exNames=new Set(ex.map(i=>i.nome))
-        mergedOC[tp]=[...ex,...itens.filter(i=>!exNames.has(i.nome)).map(i=>({id:uid(),...i}))]
+        mergedOC[tp]=itens.map(i=>({id:uid(),...i}))
       })
       return{...p,tecidos:nt,outrosCustos:mergedOC}
     })
