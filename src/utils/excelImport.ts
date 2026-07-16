@@ -22,6 +22,7 @@ const COL_MAP: Record<string, keyof FabricRow> = {
 export function extractPlmData(wb: XLSX.WorkBook): PlmData {
   const tecidos: PlmData['tecidos'] = {}
   const outrosCustos: PlmData['outrosCustos'] = {}
+  const consumoPorCodigo: PlmData['consumoPorCodigo'] = {}
 
   const ts = wb.Sheets['Tecidos']
   if (ts) {
@@ -30,6 +31,16 @@ export function extractPlmData(wb: XLSX.WorkBook): PlmData {
       const preco = parseFloat(String(row['Preço'] ?? '').replace(',', '.'))
       const unidade = String(row['Unidade'] ?? 'Kg').toLowerCase().includes('metro') ? 'metro' as const : 'kg' as const
       if (nome && !isNaN(preco)) tecidos[nome] = { preco, unidade, gramatura: 200 }
+
+      // A aba "Tecidos" traz a quantidade já em Kg por referência — a aba
+      // "Tecidos de variantes" às vezes exporta o Consumo em metro pro mesmo
+      // tecido, então essa é a fonte confiável do consumo real por peça.
+      const codigo = row['Código'] != null ? String(row['Código']).trim() : ''
+      const qtd = parseFloat(String(row['Quantidade'] ?? '').replace(',', '.'))
+      if (codigo && nome && !isNaN(qtd)) {
+        if (!consumoPorCodigo[codigo]) consumoPorCodigo[codigo] = {}
+        consumoPorCodigo[codigo][nome] = qtd
+      }
     })
   }
 
@@ -66,7 +77,7 @@ export function extractPlmData(wb: XLSX.WorkBook): PlmData {
     })
   }
 
-  return { tecidos, outrosCustos }
+  return { tecidos, outrosCustos, consumoPorCodigo }
 }
 
 export function importExcel(file: File): Promise<ImportResult> {

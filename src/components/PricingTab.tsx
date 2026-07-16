@@ -259,7 +259,14 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     const tempo = nr*coef
 
     const fabricsMap=new Map<string,number>()
-    crs.forEach(r=>{if(!fabricsMap.has(r.tecido))fabricsMap.set(r.tecido,r.consumo)})
+    crs.forEach(r=>{
+      if(fabricsMap.has(r.tecido)) return
+      // A aba "Tecidos" do PLM traz a quantidade já em Kg por referência —
+      // usa ela quando disponível, já que o Consumo da aba "Tecidos de
+      // variantes" às vezes vem em metro em vez de Kg pro mesmo tecido.
+      const doPlm=plmData?.consumoPorCodigo?.[cod]?.[r.tecido]
+      fabricsMap.set(r.tecido,doPlm??r.consumo)
+    })
     const tecidoItens=[...fabricsMap.entries()].map(([t,c])=>({
       tecido:t, consumo:c, preco:precoPorKg[t]??0, total:c*(precoPorKg[t]??0)
     }))

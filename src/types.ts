@@ -38,6 +38,10 @@ export interface OutrosCustoItem {
 export interface PlmData {
   tecidos: Record<string, FabricCostInfo>
   outrosCustos: Record<string, OutrosCustoItem[]>
+  // Quantidade em Kg por referência (código) e tecido, vinda da aba "Tecidos"
+  // — mais confiável que o Consumo da aba "Tecidos de variantes", que às
+  // vezes vem em metro em vez de Kg pro mesmo tecido.
+  consumoPorCodigo: Record<string, Record<string, number>>
 }
 
 export interface ImportResult {
