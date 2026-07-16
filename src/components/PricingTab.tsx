@@ -286,13 +286,15 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     const precoReal = cfg.precoReal[cod]??precoProp
     const lucroReal = precoReal>0?((precoReal-custoTotal)/precoReal)*100:0
 
-    // Total de peças cortadas (soma da QTADE À CORTAR por cor, sem somar tecidos repetidos da mesma cor)
-    const corMap=new Map<string,number>()
+    // Total de peças cortadas (soma da QTADE À CORTAR por variante, sem somar
+    // de novo a cada tecido/aviamento que compõe a mesma variante — cada um
+    // tem seu próprio campo "Cor", diferente do da peça)
+    const variantMap=new Map<string,number>()
     crs.forEach(r=>{
-      const cor=r.cor||'(sem cor)'
-      corMap.set(cor,Math.max(corMap.get(cor)??0,r.qtadeACortar))
+      const variante=r.variante||'(sem variante)'
+      variantMap.set(variante,Math.max(variantMap.get(variante)??0,r.qtadeACortar))
     })
-    const totalPecas=[...corMap.values()].reduce((s,v)=>s+v,0)
+    const totalPecas=[...variantMap.values()].reduce((s,v)=>s+v,0)
     const valorTotalCliente=totalPecas*precoReal
 
     return{tipo,dif,coef,nr,tempo,tecidoItens,ocItens,ocItensGlobais,ocItensTipo,custoTecido,custoOC,
