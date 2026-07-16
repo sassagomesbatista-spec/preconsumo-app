@@ -86,7 +86,7 @@ export default function TotalsTab({ rows }: Props) {
           bg={C.purpleBg} border={C.purple} text={C.purpleLt} />
         <StatCard label="Total de Tecidos" value={String(summary.length)}
           bg={C.pinkBg} border={C.pink} text={C.pink} />
-        <StatCard label="Total de Cores" value={String(new Set(rows.map(r => r.cor)).size)}
+        <StatCard label="Total de Variantes" value={String(new Set(rows.map(r => r.variante)).size)}
           bg={C.yellowBg} border={C.yellow} text={C.yellow} />
       </div>
 
