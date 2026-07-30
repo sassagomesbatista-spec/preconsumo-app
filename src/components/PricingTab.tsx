@@ -143,9 +143,15 @@ function Row({label,value,sub,bold,accent}:{label:string;value:string;sub?:strin
 }
 
 /* ─── Componente principal ────────────────────────────────── */
-interface Props { rows:FabricRow[]; plmData?:PlmData; importId?:string; initialConfig?:Partial<Config>|null; onConfigChange?:(cfg:Config)=>void }
+export interface AtacadoPreco { cod:string; tipo:string; precoAtacado:number; totalPecas:number }
 
-export default function PricingTab({rows,plmData,importId,initialConfig,onConfigChange}:Props){
+interface Props {
+  rows:FabricRow[]; plmData?:PlmData; importId?:string
+  initialConfig?:Partial<Config>|null; onConfigChange?:(cfg:Config)=>void
+  onResultsChange?:(precos:AtacadoPreco[])=>void
+}
+
+export default function PricingTab({rows,plmData,importId,initialConfig,onConfigChange,onResultsChange}:Props){
   const plmRef  = useRef<HTMLInputElement>(null)
   const pdfRef  = useRef<HTMLInputElement>(null)
   const [cfg,setCfg] = useState<Config>(()=>{
@@ -305,6 +311,11 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     uniqCodigos.map(([cod,crs])=>({cod,...calcModel(cod,crs)}))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ,[uniqCodigos,cfg,precoPorKg,totalDesp])
+
+  useEffect(()=>{
+    onResultsChange?.(allResults.map(r=>({cod:r.cod,tipo:r.tipo,precoAtacado:r.precoReal,totalPecas:r.totalPecas})))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[allResults])
 
   const toast_=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),4000)}
 

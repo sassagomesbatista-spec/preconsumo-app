@@ -1,17 +1,19 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Download, RefreshCw, Table2, BarChart3, Sigma, Tag, AlertCircle, CheckCircle2, History, LogOut } from 'lucide-react'
+import { Download, RefreshCw, Table2, BarChart3, Sigma, Tag, ShoppingCart, AlertCircle, CheckCircle2, History, LogOut } from 'lucide-react'
 import UploadZone from './components/UploadZone'
 import DataTable from './components/DataTable'
 import AnalysisTab from './components/AnalysisTab'
 import TotalsTab from './components/TotalsTab'
 import PricingTab from './components/PricingTab'
+import type { AtacadoPreco } from './components/PricingTab'
+import ResaleTab from './components/ResaleTab'
 import HistoryTab from './components/HistoryTab'
 import { importExcel } from './utils/excelImport'
 import { exportExcel } from './utils/excelExport'
 import { trpc } from './lib/trpc'
 import type { FabricRow, ImportResult } from './types'
 
-type Tab = 'dados' | 'analise' | 'totais' | 'precificacao' | 'historico'
+type Tab = 'dados' | 'analise' | 'totais' | 'precificacao' | 'revenda' | 'historico'
 
 const C = {
   bg:       '#0A0C14',
@@ -36,6 +38,7 @@ interface PersistedState {
   tab: Tab
   currentProjectId?: number | null
   pricingConfig?: unknown
+  revendaConfig?: unknown
 }
 
 function loadPersisted(): PersistedState | null {
@@ -44,6 +47,20 @@ function loadPersisted(): PersistedState | null {
     if (!s) return null
     return JSON.parse(s) as PersistedState
   } catch { return null }
+}
+
+// pricingJson guarda { pricing, revenda } desde que a aba Revenda foi criada.
+// Projetos salvos antes disso têm o objeto de precificação "cru" nesse campo
+// (sem essas duas chaves) — trata como pricing legado, sem config de revenda.
+function splitPricingJson(raw: string | null | undefined): { pricing: unknown; revenda: unknown } {
+  if (!raw) return { pricing: null, revenda: null }
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && ('pricing' in parsed || 'revenda' in parsed)) {
+      return { pricing: parsed.pricing ?? null, revenda: parsed.revenda ?? null }
+    }
+    return { pricing: parsed, revenda: null }
+  } catch { return { pricing: null, revenda: null } }
 }
 
 export default function App() {
@@ -58,6 +75,8 @@ export default function App() {
   const [colecao, setColecao] = useState(persisted?.colecao ?? '')
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(persisted?.currentProjectId ?? null)
   const [pricingConfig, setPricingConfig] = useState<unknown>(persisted?.pricingConfig ?? null)
+  const [revendaConfig, setRevendaConfig] = useState<unknown>(persisted?.revendaConfig ?? null)
+  const [atacadoPrecos, setAtacadoPrecos] = useState<AtacadoPreco[]>([])
   const [pricingKey, setPricingKey] = useState(0)
 
   const me = trpc.auth.me.useQuery()
@@ -72,13 +91,14 @@ export default function App() {
     try {
       const p = await loadProject.fetch({ id })
       const data = JSON.parse(p.dataJson) as ImportResult
-      const pricing = p.pricingJson ? JSON.parse(p.pricingJson) : null
+      const { pricing, revenda } = splitPricingJson(p.pricingJson)
       setResult(data)
       setRows(data.rows)
       setClientName(p.clientName)
       setColecao(p.colecao)
       setCurrentProjectId(p.id)
       setPricingConfig(pricing)
+      setRevendaConfig(revenda)
       setPricingKey(k => k + 1)
       setTab('dados')
     } catch {
@@ -92,10 +112,10 @@ useEffect(() => {
     if (!result) { localStorage.removeItem(STORAGE_KEY); return }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        result: { ...result, rows }, clientName, colecao, tab, currentProjectId, pricingConfig,
+        result: { ...result, rows }, clientName, colecao, tab, currentProjectId, pricingConfig, revendaConfig,
       }))
     } catch { /* quota excedida, ignora */ }
-  }, [result, rows, clientName, colecao, tab, currentProjectId, pricingConfig])
+  }, [result, rows, clientName, colecao, tab, currentProjectId, pricingConfig, revendaConfig])
 
   // Autosave na nuvem (histórico compartilhado) — debounced
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -112,14 +132,14 @@ useEffect(() => {
         id: currentProjectId ?? undefined,
         clientName, colecao,
         dataJson: JSON.stringify({ ...result, rows, clientName, colecao }),
-        pricingJson: pricingConfig ? JSON.stringify(pricingConfig) : undefined,
+        pricingJson: (pricingConfig || revendaConfig) ? JSON.stringify({ pricing: pricingConfig, revenda: revendaConfig }) : undefined,
       }, { onSettled: () => { savingRef.current = false } })
     }, 1500)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
     // saveProject (objeto da mutation) muda de identidade a cada chamada —
     // inclui-lo aqui faz o efeito reagendar o salvamento sem parar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, rows, clientName, colecao, pricingConfig, currentProjectId])
+  }, [result, rows, clientName, colecao, pricingConfig, revendaConfig, currentProjectId])
 
   const handleFile = useCallback(async (file: File) => {
     setLoading(true); setError(null)
@@ -127,7 +147,7 @@ useEffect(() => {
       const imported = await importExcel(file)
       setResult(imported); setRows(imported.rows)
       setClientName(imported.clientName); setColecao(imported.colecao)
-      setCurrentProjectId(null); setPricingConfig(null); setPricingKey(k => k + 1)
+      setCurrentProjectId(null); setPricingConfig(null); setRevendaConfig(null); setPricingKey(k => k + 1)
       setTab('dados')
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
@@ -153,7 +173,7 @@ useEffect(() => {
 
   const handleReset = () => {
     setResult(null); setRows([]); setError(null); setClientName(''); setColecao('')
-    setCurrentProjectId(null); setPricingConfig(null); setPricingKey(k => k + 1)
+    setCurrentProjectId(null); setPricingConfig(null); setRevendaConfig(null); setPricingKey(k => k + 1)
     localStorage.removeItem(STORAGE_KEY)
   }
 
@@ -162,6 +182,7 @@ useEffect(() => {
     { key: 'analise',      label: 'Análise',        icon: <BarChart3 size={14} /> },
     { key: 'totais',       label: 'Totalizações',   icon: <Sigma size={14} /> },
     { key: 'precificacao', label: 'Precificação', icon: <Tag size={14} /> },
+    { key: 'revenda',      label: 'Revenda',        icon: <ShoppingCart size={14} /> },
     { key: 'historico',    label: 'Histórico',      icon: <History size={14} /> },
   ]
 
@@ -302,7 +323,8 @@ useEffect(() => {
               {tab === 'dados'         && <DataTable rows={rows} onUpdate={handleUpdateQtade} onBulkUpdate={handleBulkUpdateQtade} />}
               {tab === 'analise'      && <AnalysisTab rows={rows} />}
               {tab === 'totais'       && <TotalsTab rows={rows} />}
-              {tab === 'precificacao' && <PricingTab key={pricingKey} rows={rows} plmData={result?.plmData} importId={result?.importId} initialConfig={pricingConfig as Parameters<typeof PricingTab>[0]['initialConfig']} onConfigChange={setPricingConfig} />}
+              {tab === 'precificacao' && <PricingTab key={pricingKey} rows={rows} plmData={result?.plmData} importId={result?.importId} initialConfig={pricingConfig as Parameters<typeof PricingTab>[0]['initialConfig']} onConfigChange={setPricingConfig} onResultsChange={setAtacadoPrecos} />}
+              {tab === 'revenda'      && <ResaleTab key={pricingKey} precos={atacadoPrecos} initialConfig={revendaConfig as Parameters<typeof ResaleTab>[0]['initialConfig']} onConfigChange={setRevendaConfig} />}
               {tab === 'historico'    && <HistoryTab currentProjectId={currentProjectId} onOpen={handleOpenHistoryProject} canDelete={isAdmin} />}
             </div>
           </>
