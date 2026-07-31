@@ -17,8 +17,9 @@ interface CustoPct  { id:string; nome:string; pct:number }
 type ModoPreco = 'margem' | 'markup'
 interface Pagamento {
   entrada:number            // R$ pago na aprovação do pedido
-  parceladoCartao:number    // R$ total parcelado no cartão
+  parceladoCartao:number    // R$ que você recebe pela parte no cartão (sem juros — os juros são por conta do cliente)
   parcelasQtd:number        // em quantas vezes
+  jurosCartaoCliente:number // opcional, só informativo: valor com juros que aparece na fatura do cliente
   dataRestante:string       // data de vencimento do restante (30 dias), formato YYYY-MM-DD
 }
 interface Config {
@@ -72,7 +73,7 @@ function dataMais30Dias(){
 }
 
 const PAGAMENTO_DEFAULT:Pagamento = {
-  entrada:0, parceladoCartao:0, parcelasQtd:1, dataRestante:dataMais30Dias(),
+  entrada:0, parceladoCartao:0, parcelasQtd:1, jurosCartaoCliente:0, dataRestante:dataMais30Dias(),
 }
 
 const DEFAULT:Config = {
@@ -356,6 +357,7 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
       <div class="label">Parcelado no Cartão</div>
       <div class="value">${R$(cfg.pagamento.parceladoCartao)}</div>
       <div class="note">${cfg.pagamento.parcelasQtd}× de ${R$(parcelaValor)}</div>
+      ${cfg.pagamento.jurosCartaoCliente>0?`<div class="note">Com juros da maquininha, total na fatura: ${R$(cfg.pagamento.jurosCartaoCliente)}</div>`:''}
     </div>
     <div class="payment-item">
       <div class="label">Restante</div>
@@ -646,12 +648,18 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
           <div className="flex flex-col gap-1">
             <label className="text-xs" style={{color:C.muted}}>Parcelado no Cartão (R$)</label>
             <NInput v={cfg.pagamento.parceladoCartao} set={v=>setPagamento('parceladoCartao',v)} step={10} color={C.purpleLt} bg={C.purpleBg}/>
+            <span className="text-xs" style={{color:C.muted}}>Valor que você recebe — sem os juros do cartão</span>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs" style={{color:C.muted}}>Nº de Parcelas</label>
             <NInput v={cfg.pagamento.parcelasQtd} set={v=>setPagamento('parcelasQtd',Math.max(1,v))} step={1} color={C.text} bg={C.surface} w="w-16"/>
             {cfg.pagamento.parceladoCartao>0&&
               <span className="text-xs" style={{color:C.muted}}>{cfg.pagamento.parcelasQtd}× de {R$(parcelaValor)}</span>}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Valor com Juros na Fatura dela (R$, opcional)</label>
+            <NInput v={cfg.pagamento.jurosCartaoCliente} set={v=>setPagamento('jurosCartaoCliente',v)} step={10} color={C.yellow} bg="#1C1A0E"/>
+            <span className="text-xs" style={{color:C.muted}}>Só informativo — não entra na sua conta, juros são por conta dela</span>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs" style={{color:C.muted}}>Vencimento do Restante</label>
