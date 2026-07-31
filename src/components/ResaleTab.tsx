@@ -15,14 +15,14 @@ const C = {
 interface CustoItem { id:string; nome:string; qtd:number; preco:number }
 interface CustoPct  { id:string; nome:string; pct:number }
 type ModoPreco = 'margem' | 'markup'
-interface Pagamento {
-  entrada:number            // R$ pago na aprovação do pedido
-  dataEntrada:string        // data de pagamento da entrada, formato YYYY-MM-DD
-  parceladoCartao:number    // R$ que você recebe pela parte no cartão (sem juros — os juros são por conta do cliente)
-  parcelasQtd:number        // em quantas vezes
-  taxaJurosCartao:number    // % de juros ao mês da maquininha — usado pra CALCULAR o valor com juros, não digitado à mão
-  dataParcelamento:string   // data da 1ª parcela do cartão, formato YYYY-MM-DD
-  dataRestante:string       // data de vencimento do restante (30 dias), formato YYYY-MM-DD
+interface ParcelaPagamento {
+  id:string
+  descricao:string      // "Entrada", "Cartão", "Restante 1" etc — livre, você escreve o que quiser
+  valor:number           // R$ que conta pro pedido (sem juros de cartão, se houver)
+  data:string             // data de pagamento/vencimento, formato YYYY-MM-DD
+  temJuros:boolean        // marca se essa parcela é no cartão e tem juros da maquininha
+  taxaJuros:number        // % ao mês — usado pra CALCULAR o valor com juros (juros compostos), não digitado à mão
+  parcelasCartao:number   // em quantas vezes no cartão, só relevante quando temJuros
 }
 interface Config {
   modo:ModoPreco; margemCliente:number; markupCliente:number; custosCliente:CustoItem[]
@@ -31,7 +31,7 @@ interface Config {
   // Se um código não aparece aqui, é tratado como incluído (true) — assim
   // orçamentos antigos continuam com tudo selecionado, sem precisar migrar nada.
   selecionados:Record<string,boolean>
-  pagamento:Pagamento
+  parcelas:ParcelaPagamento[]   // forma de pagamento — lista livre, quantas etapas quiser
   observacoes:string   // texto livre, aparece no final do Orçamento em PDF
 }
 
@@ -79,17 +79,16 @@ function dataMaisDias(n:number){
   return d.toISOString().slice(0,10)
 }
 
-const PAGAMENTO_DEFAULT:Pagamento = {
-  entrada:0, dataEntrada:dataHoje(),
-  parceladoCartao:0, parcelasQtd:1, taxaJurosCartao:0, dataParcelamento:dataHoje(),
-  dataRestante:dataMaisDias(30),
-}
+const PARCELAS_DEFAULT:ParcelaPagamento[] = [
+  {id:uid(),descricao:'Entrada',  valor:0,data:dataHoje(),        temJuros:false,taxaJuros:0,parcelasCartao:1},
+  {id:uid(),descricao:'Restante', valor:0,data:dataMaisDias(30),  temJuros:false,taxaJuros:0,parcelasCartao:1},
+]
 
 const DEFAULT:Config = {
   modo:'margem', margemCliente:40, markupCliente:2,
   custosCliente:CUSTOS_DEFAULT, custosPercentuais:PERCENTUAIS_DEFAULT, qtdCompra:{},
   selecionados:{},
-  pagamento:PAGAMENTO_DEFAULT,
+  parcelas:PARCELAS_DEFAULT,
   observacoes:'',
 }
 
@@ -130,12 +129,28 @@ interface Props {
   onConfigChange?:(cfg:Config)=>void
 }
 
+// Formato antigo (3 caixas fixas: entrada/cartão/restante) usado antes da
+// lista livre de parcelas — converte pra não perder o que já tinha sido
+// digitado.
+function migrarParcelas(raw:any):ParcelaPagamento[]|null{
+  if(!raw||typeof raw!=='object') return null
+  if(Array.isArray(raw.parcelas)) return raw.parcelas
+  const pg=raw.pagamento
+  if(!pg||typeof pg!=='object') return null
+  return [
+    {id:uid(),descricao:'Entrada',valor:pg.entrada??0,data:pg.dataEntrada??dataHoje(),temJuros:false,taxaJuros:0,parcelasCartao:1},
+    {id:uid(),descricao:'Cartão',valor:pg.parceladoCartao??0,data:pg.dataParcelamento??dataHoje(),
+      temJuros:(pg.taxaJurosCartao??0)>0,taxaJuros:pg.taxaJurosCartao??0,parcelasCartao:pg.parcelasQtd??1},
+    {id:uid(),descricao:'Restante',valor:0,data:pg.dataRestante??dataMaisDias(30),temJuros:false,taxaJuros:0,parcelasCartao:1},
+  ]
+}
+
 export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   const [cfg,setCfg] = useState<Config>(()=>{
     if(initialConfig) return {...DEFAULT,...initialConfig,
       custosCliente:initialConfig.custosCliente??CUSTOS_DEFAULT,
       custosPercentuais:initialConfig.custosPercentuais??PERCENTUAIS_DEFAULT,
-      pagamento:{...PAGAMENTO_DEFAULT,...initialConfig.pagamento}}
+      parcelas:migrarParcelas(initialConfig)??PARCELAS_DEFAULT}
     try{
       const s=localStorage.getItem('revenda-v2')
       if(s){
@@ -143,7 +158,7 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
         return {...DEFAULT,...p,
           custosCliente:p.custosCliente??CUSTOS_DEFAULT,
           custosPercentuais:p.custosPercentuais??PERCENTUAIS_DEFAULT,
-          pagamento:{...PAGAMENTO_DEFAULT,...p.pagamento}}
+          parcelas:migrarParcelas(p)??PARCELAS_DEFAULT}
       }
     }catch{}
     return DEFAULT
@@ -157,8 +172,13 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
     setCfg(p=>({...p,custosCliente:fn(p.custosCliente)}))
   const setPercentuais=(fn:(arr:CustoPct[])=>CustoPct[])=>
     setCfg(p=>({...p,custosPercentuais:fn(p.custosPercentuais)}))
-  const setPagamento=<K extends keyof Pagamento>(k:K,v:Pagamento[K])=>
-    setCfg(p=>({...p,pagamento:{...p.pagamento,[k]:v}}))
+  const setParcelas=(fn:(arr:ParcelaPagamento[])=>ParcelaPagamento[])=>
+    setCfg(p=>({...p,parcelas:fn(p.parcelas)}))
+  const updateParcela=<K extends keyof ParcelaPagamento>(id:string,k:K,v:ParcelaPagamento[K])=>
+    setParcelas(arr=>arr.map(pc=>pc.id===id?{...pc,[k]:v}:pc))
+  const addParcela=()=>setParcelas(arr=>[...arr,
+    {id:uid(),descricao:'',valor:0,data:dataHoje(),temJuros:false,taxaJuros:0,parcelasCartao:1}])
+  const removeParcela=(id:string)=>setParcelas(arr=>arr.filter(pc=>pc.id!==id))
   const setObservacoes=(v:string)=>setCfg(p=>({...p,observacoes:v}))
 
   const custosTotal = useMemo(()=>cfg.custosCliente.reduce((s,i)=>s+i.qtd*i.preco,0),[cfg.custosCliente])
@@ -197,22 +217,26 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   [resultados,cfg.selecionados])
 
   const totalGeralCompra = useMemo(()=>resultadosPedido.reduce((s,r)=>s+r.valorTotalAtacado,0),[resultadosPedido])
-  // O que abate a dívida com você é sempre o valor SEM juros — os juros da
-  // maquininha vão pra administradora do cartão, não pra você.
-  const restantePagamento = totalGeralCompra-cfg.pagamento.entrada-cfg.pagamento.parceladoCartao
-  const parcelaValor = cfg.pagamento.parcelasQtd>0?cfg.pagamento.parceladoCartao/cfg.pagamento.parcelasQtd:0
-  // Fórmula de juros compostos ao mês (padrão financeiro de parcelamento) —
-  // calculado, não digitado à mão, pra poder reusar com qualquer cliente
-  // só trocando a taxa: valorComJuros = capital × (1+taxa)^parcelas
-  const valorComJuros = cfg.pagamento.parceladoCartao*Math.pow(1+cfg.pagamento.taxaJurosCartao/100,cfg.pagamento.parcelasQtd)
-  const parcelaJurosValor = cfg.pagamento.parcelasQtd>0?valorComJuros/cfg.pagamento.parcelasQtd:0
+
   const fmtData=(s:string)=>{
     const [y,m,d]=s.split('-')
     return y&&m&&d?`${d}/${m}/${y}`:s
   }
-  const dataEntradaFmt = fmtData(cfg.pagamento.dataEntrada)
-  const dataParcelamentoFmt = fmtData(cfg.pagamento.dataParcelamento)
-  const dataRestanteFmt = fmtData(cfg.pagamento.dataRestante)
+
+  // O que abate a dívida com você é sempre o valor de cada parcela SEM juros
+  // — os juros da maquininha vão pra administradora do cartão, não pra você.
+  // Fórmula de juros compostos ao mês (padrão financeiro de parcelamento),
+  // calculada, não digitada à mão, pra reusar com qualquer cliente.
+  const parcelasCalc = useMemo(()=>cfg.parcelas.map(pc=>{
+    const qtd=Math.max(1,pc.parcelasCartao)
+    const valorComJuros=pc.temJuros?pc.valor*Math.pow(1+pc.taxaJuros/100,qtd):pc.valor
+    const parcelaSimples=pc.valor/qtd
+    const parcelaComJuros=valorComJuros/qtd
+    return {...pc,dataFmt:fmtData(pc.data),valorComJuros,parcelaSimples,parcelaComJuros}
+  }),[cfg.parcelas])
+
+  const totalParcelas = useMemo(()=>cfg.parcelas.reduce((s,pc)=>s+pc.valor,0),[cfg.parcelas])
+  const diferencaParcelas = totalGeralCompra-totalParcelas
 
   /* ── Ficha de revenda de uma peça (PDF) ─────────────── */
   const printFicha=(r:typeof resultados[number])=>{
@@ -328,12 +352,14 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   /* Forma de pagamento */
   .payment{margin-top:28px;border:1px solid #EAD9BF;border-radius:4px;overflow:hidden}
   .payment-title{background:#F7F5F2;padding:8px 14px;font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#8C6D46}
-  .payment-grid{display:flex}
-  .payment-item{flex:1;padding:12px 14px;border-right:1px solid #F0EDEA}
-  .payment-item:last-child{border-right:none}
-  .payment-item .label{font-size:10px;color:#999;margin-bottom:3px}
-  .payment-item .value{font-size:15px;font-weight:700;color:#1C1C1E}
-  .payment-item .note{font-size:10.5px;color:#666;margin-top:2px}
+  .payment-row{display:flex;justify-content:space-between;align-items:baseline;padding:11px 14px;border-bottom:1px solid #F0EDEA;gap:16px}
+  .payment-row:last-child{border-bottom:none}
+  .payment-row .desc{flex:1}
+  .payment-row .desc .label{font-size:13px;font-weight:600;color:#1C1C1E}
+  .payment-row .desc .note{font-size:10.5px;color:#666;margin-top:2px}
+  .payment-row .value{font-size:15px;font-weight:700;color:#1C1C1E;white-space:nowrap}
+  .payment-total{display:flex;justify-content:space-between;padding:10px 14px;background:#F7F5F2;font-size:12.5px;font-weight:700;color:#1C1C1E}
+  .payment-diff{padding:8px 14px;font-size:11px;color:#A15C2F;background:#FBF0E4}
   /* Observações */
   .notes{margin-top:20px}
   .notes-title{font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#999;margin-bottom:6px}
@@ -384,25 +410,20 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   </div>
 </div>
 
-${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0)?`<div class="payment">
+${parcelasCalc.some(pc=>pc.valor>0||pc.descricao.trim())?`<div class="payment">
   <div class="payment-title">Forma de Pagamento</div>
-  <div class="payment-grid">
-    <div class="payment-item">
-      <div class="label">Entrada</div>
-      <div class="value">${R$(cfg.pagamento.entrada)}</div>
-      <div class="note">Pagamento em ${dataEntradaFmt}</div>
+  ${parcelasCalc.map(pc=>`
+  <div class="payment-row">
+    <div class="desc">
+      <div class="label">${escapeHtml(pc.descricao||'(sem descrição)')}</div>
+      <div class="note">${pc.temJuros
+        ?`Na fatura do cartão: ${Math.max(1,pc.parcelasCartao)}× de ${R$(pc.parcelaComJuros)} (total ${R$(pc.valorComJuros)}) — a diferença é juros da operadora do cartão, não é cobrada por nós`
+        :(pc.parcelasCartao>1?`${pc.parcelasCartao}× de ${R$(pc.parcelaSimples)} — `:'')+`Vencimento: ${pc.dataFmt}`}</div>
     </div>
-    <div class="payment-item">
-      <div class="label">Parcelado no Cartão</div>
-      <div class="value">${R$(cfg.pagamento.parceladoCartao)}</div>
-      ${cfg.pagamento.taxaJurosCartao>0?`<div class="note">Na fatura do cartão: ${cfg.pagamento.parcelasQtd}× de ${R$(parcelaJurosValor)} (total ${R$(valorComJuros)}), 1ª parcela em ${dataParcelamentoFmt} — a diferença é juros da operadora do cartão, não é cobrada por nós</div>`:`<div class="note">${cfg.pagamento.parcelasQtd}× de ${R$(parcelaValor)} — 1ª parcela em ${dataParcelamentoFmt}</div>`}
-    </div>
-    <div class="payment-item">
-      <div class="label">Restante</div>
-      <div class="value">${R$(restantePagamento)}</div>
-      <div class="note">Vencimento: ${dataRestanteFmt}</div>
-    </div>
-  </div>
+    <div class="value">${R$(pc.valor)}</div>
+  </div>`).join('')}
+  <div class="payment-total"><span>Total das Parcelas</span><span>${R$(totalParcelas)}</span></div>
+  ${Math.abs(diferencaParcelas)>0.01?`<div class="payment-diff">${diferencaParcelas>0?`Falta alocar ${R$(diferencaParcelas)} pra fechar o Valor Total do Orçamento`:`Parcelas somam ${R$(Math.abs(diferencaParcelas))} a mais que o Valor Total do Orçamento`}</div>`:''}
 </div>`:''}
 
 ${cfg.observacoes.trim()?`<div class="notes">
@@ -692,62 +713,72 @@ ${cfg.observacoes.trim()?`<div class="notes">
           </div>
         </div>
 
-        {/* Entrada */}
-        <div className="flex flex-wrap items-end gap-6 pb-3" style={{borderBottom:`1px solid ${C.border}`}}>
-          <span className="text-xs font-bold uppercase tracking-wide w-20" style={{color:C.purpleLt}}>1. Entrada</span>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Valor (R$)</label>
-            <NInput v={cfg.pagamento.entrada} set={v=>setPagamento('entrada',v)} step={10} color={C.purpleLt} bg={C.purpleBg}/>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Data de Pagamento</label>
-            <input type="date" value={cfg.pagamento.dataEntrada}
-              onChange={e=>setPagamento('dataEntrada',e.target.value)}
-              className="rounded px-2 py-1 text-sm focus:outline-none"
-              style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
-          </div>
-        </div>
-
-        {/* Parcelado no cartão */}
-        <div className="flex flex-wrap items-end gap-6 pb-3" style={{borderBottom:`1px solid ${C.border}`}}>
-          <span className="text-xs font-bold uppercase tracking-wide w-20" style={{color:C.purpleLt}}>2. Cartão</span>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Valor Parcelado (R$)</label>
-            <NInput v={cfg.pagamento.parceladoCartao} set={v=>setPagamento('parceladoCartao',v)} step={10} color={C.purpleLt} bg={C.purpleBg}/>
-            <span className="text-xs" style={{color:C.muted}}>O que você recebe — sem juros</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Nº de Parcelas</label>
-            <NInput v={cfg.pagamento.parcelasQtd} set={v=>setPagamento('parcelasQtd',Math.max(1,v))} step={1} color={C.text} bg={C.surface} w="w-16"/>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Taxa de Juros da Maquininha (% ao mês)</label>
-            <NInput v={cfg.pagamento.taxaJurosCartao} set={v=>setPagamento('taxaJurosCartao',v)} step={0.1} color={C.yellow} bg="#1C1A0E" w="w-20"/>
-            {cfg.pagamento.taxaJurosCartao>0&&cfg.pagamento.parceladoCartao>0&&
-              <span className="text-xs" style={{color:C.muted}}>Calculado: {cfg.pagamento.parcelasQtd}× de {R$(parcelaJurosValor)} (total {R$(valorComJuros)} na fatura dela — juros não entram na sua conta)</span>}
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>1ª Parcela em</label>
-            <input type="date" value={cfg.pagamento.dataParcelamento}
-              onChange={e=>setPagamento('dataParcelamento',e.target.value)}
-              className="rounded px-2 py-1 text-sm focus:outline-none"
-              style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
-          </div>
-        </div>
-
-        {/* Restante */}
-        <div className="flex flex-wrap items-end gap-6">
-          <span className="text-xs font-bold uppercase tracking-wide w-20" style={{color:C.purpleLt}}>3. Restante</span>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Valor (calculado)</label>
-            <span className="text-lg font-bold" style={{color:C.green}}>{R$(restantePagamento)}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Vencimento</label>
-            <input type="date" value={cfg.pagamento.dataRestante}
-              onChange={e=>setPagamento('dataRestante',e.target.value)}
-              className="rounded px-2 py-1 text-sm focus:outline-none"
-              style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
+        {/* Lista livre de parcelas */}
+        <div className="flex flex-col gap-2">
+          {cfg.parcelas.map((pc,idx)=>{
+            const calc=parcelasCalc[idx]
+            return(
+            <div key={pc.id} className="flex flex-col gap-2 p-3 rounded-lg" style={{background:C.surface,border:`1px solid ${C.border}`}}>
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="flex flex-col gap-1 flex-1" style={{minWidth:160}}>
+                  <label className="text-xs" style={{color:C.muted}}>Descrição</label>
+                  <input value={pc.descricao} onChange={e=>updateParcela(pc.id,'descricao',e.target.value)}
+                    placeholder="Ex: Entrada, Cartão, Restante 1..."
+                    className="rounded px-2 py-1 text-sm focus:outline-none"
+                    style={{background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}/>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs" style={{color:C.muted}}>Valor (R$)</label>
+                  <NInput v={pc.valor} set={v=>updateParcela(pc.id,'valor',v)} step={10} color={C.purpleLt} bg={C.purpleBg}/>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs" style={{color:C.muted}}>Data</label>
+                  <input type="date" value={pc.data}
+                    onChange={e=>updateParcela(pc.id,'data',e.target.value)}
+                    className="rounded px-2 py-1 text-sm focus:outline-none"
+                    style={{background:C.surface2,border:`1px solid ${C.border}`,color:C.text}}/>
+                </div>
+                <label className="flex items-center gap-1.5 text-xs" style={{color:C.muted}}>
+                  <input type="checkbox" checked={pc.temJuros}
+                    onChange={e=>updateParcela(pc.id,'temJuros',e.target.checked)}
+                    style={{accentColor:C.teal}}/>
+                  Parcelado no cartão (tem juros)
+                </label>
+                <button onClick={()=>removeParcela(pc.id)}
+                  className="text-xs px-2 py-1 rounded ml-auto" style={{color:C.pink,background:C.pinkBg}}>
+                  ✕ Remover
+                </button>
+              </div>
+              {pc.temJuros&&(
+                <div className="flex flex-wrap items-end gap-4 pl-1">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs" style={{color:C.muted}}>Nº de Parcelas do Cartão</label>
+                    <NInput v={pc.parcelasCartao} set={v=>updateParcela(pc.id,'parcelasCartao',Math.max(1,v))} step={1} color={C.text} bg={C.surface2} w="w-16"/>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs" style={{color:C.muted}}>Taxa de Juros da Maquininha (% ao mês)</label>
+                    <NInput v={pc.taxaJuros} set={v=>updateParcela(pc.id,'taxaJuros',v)} step={0.1} color={C.yellow} bg="#1C1A0E" w="w-20"/>
+                  </div>
+                  {pc.taxaJuros>0&&pc.valor>0&&
+                    <span className="text-xs" style={{color:C.muted}}>
+                      Calculado: {Math.max(1,pc.parcelasCartao)}× de {R$(calc.parcelaComJuros)} (total {R$(calc.valorComJuros)} na fatura dela — juros não entram na sua conta)
+                    </span>}
+                </div>
+              )}
+            </div>
+          )})}
+          <div className="flex items-center gap-4">
+            <button onClick={addParcela}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium"
+              style={{color:C.teal,border:`1px solid ${C.teal}`,background:C.tealBg}}>
+              + Adicionar parcela
+            </button>
+            <span className="text-xs" style={{color:C.muted}}>
+              Total das parcelas: <strong style={{color:Math.abs(diferencaParcelas)>0.01?C.pink:C.green}}>{R$(totalParcelas)}</strong>
+              {Math.abs(diferencaParcelas)>0.01&&(
+                <> — {diferencaParcelas>0?`falta ${R$(diferencaParcelas)}`:`sobrou ${R$(Math.abs(diferencaParcelas))}`}</>
+              )}
+            </span>
           </div>
         </div>
 
