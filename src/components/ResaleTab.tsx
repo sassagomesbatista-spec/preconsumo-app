@@ -652,9 +652,15 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
       </div>
 
       <div className="rounded-xl p-4 flex flex-col gap-4" style={{background:C.surface2,border:`1px solid ${C.border}`}}>
-        <p className="text-xs uppercase tracking-wide" style={{color:C.muted}}>
-          Forma de Pagamento (aparece no Orçamento em PDF, vale pro pedido inteiro) — mesma fórmula pra qualquer cliente, só troca os valores
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs uppercase tracking-wide" style={{color:C.muted}}>
+            Forma de Pagamento (aparece no Orçamento em PDF, vale pro pedido inteiro) — mesma fórmula pra qualquer cliente, só troca os valores
+          </p>
+          <div className="text-right shrink-0 pl-4">
+            <p className="text-xs uppercase tracking-wide" style={{color:C.muted}}>Valor Total do Pedido</p>
+            <p className="text-lg font-bold" style={{color:C.green}}>{R$(totalGeralCompra)}</p>
+          </div>
+        </div>
 
         {/* Entrada */}
         <div className="flex flex-wrap items-end gap-6 pb-3" style={{borderBottom:`1px solid ${C.border}`}}>
