@@ -386,8 +386,9 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
     </div>
     <div class="payment-item">
       <div class="label">Parcelado no Cartão</div>
-      <div class="value">${R$(cfg.pagamento.taxaJurosCartao>0?valorComJuros:cfg.pagamento.parceladoCartao)}</div>
-      <div class="note">${cfg.pagamento.parcelasQtd}× de ${R$(cfg.pagamento.taxaJurosCartao>0?parcelaJurosValor:parcelaValor)} — 1ª parcela em ${dataParcelamentoFmt}</div>
+      <div class="value">${R$(cfg.pagamento.parceladoCartao)}</div>
+      <div class="note">${cfg.pagamento.parcelasQtd}× de ${R$(parcelaValor)} — abate do seu pedido</div>
+      ${cfg.pagamento.taxaJurosCartao>0?`<div class="note">Na fatura do cartão: ${cfg.pagamento.parcelasQtd}× de ${R$(parcelaJurosValor)} (total ${R$(valorComJuros)}), 1ª parcela em ${dataParcelamentoFmt} — a diferença é juros da operadora do cartão, não é cobrada por nós</div>`:`<div class="note">1ª parcela em ${dataParcelamentoFmt}</div>`}
     </div>
     <div class="payment-item">
       <div class="label">Restante</div>
