@@ -106,7 +106,7 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
       custosCliente:initialConfig.custosCliente??CUSTOS_DEFAULT,
       custosPercentuais:initialConfig.custosPercentuais??PERCENTUAIS_DEFAULT}
     try{
-      const s=localStorage.getItem('revenda-v1')
+      const s=localStorage.getItem('revenda-v2')
       if(s){
         const p=JSON.parse(s)
         return {...DEFAULT,...p,
@@ -118,7 +118,7 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   })
   const [selectedCod,setSelectedCod] = useState<string|null>(precos[0]?.cod??null)
 
-  useEffect(()=>{localStorage.setItem('revenda-v1',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
+  useEffect(()=>{localStorage.setItem('revenda-v2',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
   useEffect(()=>{if(!selectedCod&&precos.length>0) setSelectedCod(precos[0].cod)},[precos,selectedCod])
 
   const setCustos=(fn:(arr:CustoItem[])=>CustoItem[])=>
