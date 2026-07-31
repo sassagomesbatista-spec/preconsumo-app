@@ -139,9 +139,11 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
     const lucroCliente = precoRevenda-custoCliente
     const lucroPct = precoRevenda>0?(lucroCliente/precoRevenda)*100:0
     const qtdCompra = cfg.qtdCompra[p.cod]??p.totalPecas
-    const valorTotalRevenda = precoRevenda*qtdCompra
+    // "Valor Total da Compra" é quanto o CLIENTE paga pra Samanta (atacado × qtd) —
+    // não o quanto ele fatura revendendo (isso é o precoRevenda, mostrado à parte).
+    const valorTotalAtacado = p.precoAtacado*qtdCompra
     const lucroTotalCliente = lucroCliente*qtdCompra
-    return {...p,custoCliente,precoRevenda,lucroCliente,lucroPct,qtdCompra,valorTotalRevenda,lucroTotalCliente}
+    return {...p,custoCliente,precoRevenda,lucroCliente,lucroPct,qtdCompra,valorTotalAtacado,lucroTotalCliente}
   }),[precos,custosTotal,fator,fatorPct,cfg.modo,cfg.markupCliente,cfg.qtdCompra])
 
   const setQtdCompra=(cod:string,qtd:number)=>setCfg(p=>({...p,qtdCompra:{...p.qtdCompra,[cod]:qtd}}))
@@ -201,7 +203,7 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
 
 <div class="section" style="margin-top:16px">
   <div class="row"><span>Quantidade</span><span>${r.qtdCompra} peças</span></div>
-  <div class="row subtotal"><span>Valor Total da Compra</span><span>${R$(r.valorTotalRevenda)}</span></div>
+  <div class="row subtotal"><span>Valor Total da Compra</span><span>${R$(r.valorTotalAtacado)}</span></div>
 </div>
 
 <div class="footer">
@@ -264,7 +266,7 @@ ${resultados.map(r=>`
   </div>
   <div class="section" style="margin-top:16px">
     <div class="row"><span>Quantidade</span><span>${r.qtdCompra} peças</span></div>
-    <div class="row subtotal"><span>Valor Total da Compra</span><span>${R$(r.valorTotalRevenda)}</span></div>
+    <div class="row subtotal"><span>Valor Total da Compra</span><span>${R$(r.valorTotalAtacado)}</span></div>
   </div>
   <div class="footer">
     <span>Samanta Gomes Fashion Office</span>
@@ -301,7 +303,7 @@ ${resultados.map(r=>`
 <p class="sub">Sugestão de preço de revenda pro cliente que compra no atacado &nbsp;·&nbsp; Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
 <table>
   <thead><tr>
-    <th>Código</th><th>Tipo</th><th>Preço de Atacado</th><th>Preço de Revenda Sugerido</th><th>Qtd.</th><th>Valor Total</th>
+    <th>Código</th><th>Tipo</th><th>Preço de Atacado</th><th>Preço de Revenda Sugerido</th><th>Qtd.</th><th>Valor Total da Compra</th>
   </tr></thead>
   <tbody>
   ${resultados.map(r=>`
@@ -311,14 +313,14 @@ ${resultados.map(r=>`
       <td>${R$(r.precoAtacado)}</td>
       <td class="price">${R$(r.precoRevenda)}</td>
       <td>${r.qtdCompra}</td>
-      <td class="price">${R$(r.valorTotalRevenda)}</td>
+      <td class="price">${R$(r.valorTotalAtacado)}</td>
     </tr>`).join('')}
   </tbody>
   <tfoot>
     <tr style="font-weight:700">
       <td class="left" colspan="4">VALOR TOTAL DA COMPRA</td>
       <td>${resultados.reduce((s,r)=>s+r.qtdCompra,0)}</td>
-      <td class="price">${R$(resultados.reduce((s,r)=>s+r.valorTotalRevenda,0))}</td>
+      <td class="price">${R$(resultados.reduce((s,r)=>s+r.valorTotalAtacado,0))}</td>
     </tr>
   </tfoot>
 </table>
@@ -340,7 +342,7 @@ ${resultados.map(r=>`
       {header:'Preço de Atacado',           key:'atacado',width:16},
       {header:'Preço de Revenda Sugerido',  key:'revenda',width:20},
       {header:'Quantidade',                 key:'qtd',    width:12},
-      {header:'Valor Total',                key:'total',  width:16},
+      {header:'Valor Total da Compra',      key:'total',  width:20},
     ]
 
     const hRow=ws.getRow(1)
@@ -356,7 +358,7 @@ ${resultados.map(r=>`
       const row=ws.addRow({
         cod:r.cod, tipo:r.tipo, atacado:r.precoAtacado, revenda:r.precoRevenda, qtd:r.qtdCompra,
       })
-      row.getCell('total').value={formula:`D${rowNum}*E${rowNum}`}
+      row.getCell('total').value={formula:`C${rowNum}*E${rowNum}`}
       const bg=i%2===0?'FFFFFFFF':'FFF7F7F7'
       row.eachCell((cell,col)=>{
         cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}}
@@ -574,7 +576,7 @@ ${resultados.map(r=>`
                 <span className="text-base font-bold" style={{color:C.green}}>PREÇO DE REVENDA SUGERIDO</span>
                 <span className="text-xl font-bold" style={{color:C.green}}>{R$(current.precoRevenda)}</span>
               </div>
-              <Row label={`Valor Total da Compra (${current.qtdCompra} peças)`} value={R$(current.valorTotalRevenda)} accent={C.purpleLt}/>
+              <Row label={`Valor Total da Compra (${current.qtdCompra} peças)`} value={R$(current.valorTotalAtacado)} accent={C.purpleLt}/>
               <Row label={`Lucro Total do Cliente (${current.qtdCompra} peças)`} value={R$(current.lucroTotalCliente)} bold accent={C.green}/>
             </div>
             <div className="px-5 py-3" style={{borderTop:`1px solid ${C.border}`}}>
