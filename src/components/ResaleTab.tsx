@@ -32,6 +32,7 @@ interface Config {
   // orçamentos antigos continuam com tudo selecionado, sem precisar migrar nada.
   selecionados:Record<string,boolean>
   pagamento:Pagamento
+  observacoes:string   // texto livre, aparece no final do Orçamento em PDF
 }
 
 function uid(){ return Math.random().toString(36).slice(2,9) }
@@ -89,9 +90,11 @@ const DEFAULT:Config = {
   custosCliente:CUSTOS_DEFAULT, custosPercentuais:PERCENTUAIS_DEFAULT, qtdCompra:{},
   selecionados:{},
   pagamento:PAGAMENTO_DEFAULT,
+  observacoes:'',
 }
 
 const R$  = (n:number) => n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
+const escapeHtml = (s:string) => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!))
 
 function NInput({v,set,step=0.01,color=C.text,bg=C.surface2,w='w-24'}:{
   v:number;set:(n:number)=>void;step?:number;color?:string;bg?:string;w?:string
@@ -156,6 +159,7 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
     setCfg(p=>({...p,custosPercentuais:fn(p.custosPercentuais)}))
   const setPagamento=<K extends keyof Pagamento>(k:K,v:Pagamento[K])=>
     setCfg(p=>({...p,pagamento:{...p.pagamento,[k]:v}}))
+  const setObservacoes=(v:string)=>setCfg(p=>({...p,observacoes:v}))
 
   const custosTotal = useMemo(()=>cfg.custosCliente.reduce((s,i)=>s+i.qtd*i.preco,0),[cfg.custosCliente])
   const pctTotal = useMemo(()=>cfg.custosPercentuais.reduce((s,i)=>s+i.pct,0),[cfg.custosPercentuais])
@@ -330,6 +334,10 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   .payment-item .label{font-size:10px;color:#999;margin-bottom:3px}
   .payment-item .value{font-size:15px;font-weight:700;color:#1C1C1E}
   .payment-item .note{font-size:10.5px;color:#666;margin-top:2px}
+  /* Observações */
+  .notes{margin-top:20px}
+  .notes-title{font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#999;margin-bottom:6px}
+  .notes-body{font-size:12px;color:#444;white-space:pre-wrap;border-left:3px solid #EAD9BF;padding:2px 0 2px 12px}
   /* Footer */
   .footer{margin-top:32px;padding-top:12px;border-top:1px solid #E5E5E5;font-size:9.5px;color:#BBBBBB;display:flex;justify-content:space-between}
   @media print{.totals-row.grand{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact}tbody tr:nth-child(even){-webkit-print-color-adjust:exact;print-color-adjust:exact}}
@@ -395,6 +403,11 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
       <div class="note">Vencimento: ${dataRestanteFmt}</div>
     </div>
   </div>
+</div>`:''}
+
+${cfg.observacoes.trim()?`<div class="notes">
+  <div class="notes-title">Observações</div>
+  <div class="notes-body">${escapeHtml(cfg.observacoes)}</div>
 </div>`:''}
 
 <div class="footer">
@@ -736,6 +749,16 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
               className="rounded px-2 py-1 text-sm focus:outline-none"
               style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
           </div>
+        </div>
+
+        {/* Observações */}
+        <div className="flex flex-col gap-1 pt-3" style={{borderTop:`1px solid ${C.border}`}}>
+          <label className="text-xs" style={{color:C.muted}}>Observações (aparece no final do Orçamento em PDF)</label>
+          <textarea value={cfg.observacoes} onChange={e=>setObservacoes(e.target.value)}
+            placeholder="Ex: prazo de entrega, condições de troca, validade da proposta..."
+            rows={2}
+            className="rounded px-3 py-2 text-sm focus:outline-none resize-y"
+            style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
         </div>
       </div>
 
