@@ -216,63 +216,100 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   }
 
   /* ── Fichas de revenda de todas as peças, uma por página (PDF) ── */
+  /* ── Orçamento de revenda: documento único, com total geral no final ── */
   const printFichasTodas=()=>{
-    const w=window.open('','_blank','width=820,height=960')
+    const w=window.open('','_blank','width=900,height=1000')
     if(!w) return
     const logoUrl=`${window.location.origin}/logo.png`
+    const hoje=new Date()
+    const validade=new Date(hoje.getTime()+7*24*60*60*1000)
+    const totalGeral=resultados.reduce((s,r)=>s+r.valorTotalAtacado,0)
+    const totalPecas=resultados.reduce((s,r)=>s+r.qtdCompra,0)
     w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
-<title>Fichas de Revenda</title>
+<title>Orçamento de Revenda</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;color:#1C1C1E;background:#fff;font-size:12.5px;line-height:1.5}
-  .ficha{padding:36px 40px;page-break-after:always}
-  .ficha:last-child{page-break-after:auto}
-  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0;padding-bottom:18px;border-bottom:3px solid #1C1C1E}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1C1C1E;background:#fff;padding:40px 44px;font-size:12.5px;line-height:1.5}
+  /* Header */
+  .header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:20px;border-bottom:3px solid #1C1C1E}
   .logo-wrap{background:#fff;padding:6px 10px;border:1px solid #E5E5E5;border-radius:4px;display:inline-flex;align-items:center}
   .logo-wrap img{height:38px;width:auto;display:block}
-  .ref{text-align:right}
-  .ref .doc-title{font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#999;margin-bottom:4px}
-  .ref h2{font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#1C1C1E}
-  .ref p{color:#666;font-size:11px;margin-top:2px}
-  .accent-bar{height:3px;background:linear-gradient(to right,#C9A96E,#E8D5B0,#C9A96E);margin-bottom:22px}
-  .section{margin-bottom:14px}
-  .row{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid #F0EDEA;font-size:13px}
-  .row.subtotal{background:#FAF8F5;font-weight:600}
-  .row.price-real{background:linear-gradient(135deg,#C9A96E 0%,#B8864E 100%);color:#fff;font-size:22px;font-weight:800;padding:16px 14px;letter-spacing:-0.3px;border-radius:2px;margin-top:2px}
-  .row.price-real .label{display:flex;flex-direction:column}
-  .row.price-real .label small{font-size:9px;font-weight:400;letter-spacing:1.5px;text-transform:uppercase;opacity:.85;margin-bottom:1px}
-  .footer{margin-top:28px;padding-top:10px;border-top:1px solid #E5E5E5;font-size:9.5px;color:#BBBBBB;display:flex;justify-content:space-between}
-  @media print{.row.price-real{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  .doc{text-align:right}
+  .doc .doc-title{font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#999;margin-bottom:4px}
+  .doc h1{font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#1C1C1E}
+  .doc p{color:#666;font-size:11px;margin-top:3px}
+  .accent-bar{height:3px;background:linear-gradient(to right,#C9A96E,#E8D5B0,#C9A96E);margin:0 0 26px}
+  /* Meta info */
+  .meta{display:flex;gap:40px;margin-bottom:24px}
+  .meta div{flex:1}
+  .meta .label{font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#B8864E;margin-bottom:3px}
+  .meta .value{font-size:13px;color:#1C1C1E}
+  /* Table */
+  table{width:100%;border-collapse:collapse;margin-bottom:0}
+  thead th{background:#1C1C1E;color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-align:right;padding:10px 12px}
+  thead th:first-child,thead th:nth-child(2){text-align:left}
+  tbody td{padding:11px 12px;border-bottom:1px solid #F0EDEA;text-align:right;font-size:12.5px}
+  tbody td:first-child,tbody td:nth-child(2){text-align:left}
+  tbody td.cod{font-weight:600;color:#8C6D46}
+  tbody tr:nth-child(even){background:#FAF8F5}
+  tbody td.price{font-weight:600}
+  /* Totals */
+  .totals{display:flex;justify-content:flex-end;margin-top:0}
+  .totals-box{width:280px}
+  .totals-row{display:flex;justify-content:space-between;padding:8px 12px;font-size:12.5px;color:#666;border-bottom:1px solid #F0EDEA}
+  .totals-row.grand{background:linear-gradient(135deg,#C9A96E 0%,#B8864E 100%);color:#fff;font-size:19px;font-weight:800;padding:16px 14px;border-radius:2px;margin-top:8px;letter-spacing:-0.3px}
+  .totals-row.grand small{display:block;font-size:9px;font-weight:400;letter-spacing:1.5px;text-transform:uppercase;opacity:.85;margin-bottom:2px}
+  /* Footer */
+  .footer{margin-top:32px;padding-top:12px;border-top:1px solid #E5E5E5;font-size:9.5px;color:#BBBBBB;display:flex;justify-content:space-between}
+  @media print{.totals-row.grand{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact}tbody tr:nth-child(even){-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head><body>
-${resultados.map(r=>`
-<div class="ficha">
-  <div class="header">
-    <div class="logo-wrap"><img src="${logoUrl}" alt="Samanta Gomes"/></div>
-    <div class="ref">
-      <div class="doc-title">Ficha de Revenda</div>
-      <h2>REF ${r.cod}</h2>
-      <p>${r.tipo}</p>
+
+<div class="header">
+  <div class="logo-wrap"><img src="${logoUrl}" alt="Samanta Gomes"/></div>
+  <div class="doc">
+    <div class="doc-title">Orçamento de Revenda</div>
+    <h1>Proposta de Compra</h1>
+    <p>Gerado em ${hoje.toLocaleDateString('pt-BR')} &nbsp;·&nbsp; Válido até ${validade.toLocaleDateString('pt-BR')}</p>
+  </div>
+</div>
+<div class="accent-bar"></div>
+
+<div class="meta">
+  <div><div class="label">Peças no orçamento</div><div class="value">${resultados.length} modelo(s) &nbsp;·&nbsp; ${totalPecas} peças</div></div>
+  <div><div class="label">Condição</div><div class="value">Preços válidos para a quantidade indicada por modelo</div></div>
+</div>
+
+<table>
+  <thead><tr>
+    <th>Código</th><th>Peça</th><th>Preço Unitário</th><th>Qtd.</th><th>Valor Total</th>
+  </tr></thead>
+  <tbody>
+  ${resultados.map(r=>`
+    <tr>
+      <td class="cod">${r.cod}</td>
+      <td>${r.tipo}</td>
+      <td>${R$(r.precoAtacado)}</td>
+      <td>${r.qtdCompra}</td>
+      <td class="price">${R$(r.valorTotalAtacado)}</td>
+    </tr>`).join('')}
+  </tbody>
+</table>
+
+<div class="totals">
+  <div class="totals-box">
+    <div class="totals-row"><span>Total de peças</span><span>${totalPecas}</span></div>
+    <div class="totals-row grand">
+      <span><small>Valor Total do Orçamento</small>${R$(totalGeral)}</span>
     </div>
   </div>
-  <div class="accent-bar"></div>
-  <div class="section">
-    <div class="row"><span>Preço de Atacado</span><span>${R$(r.precoAtacado)}</span></div>
-  </div>
-  <div class="row price-real">
-    <span class="label"><small>Preço de Revenda</small>SUGERIDO</span>
-    <span>${R$(r.precoRevenda)}</span>
-  </div>
-  <div class="section" style="margin-top:16px">
-    <div class="row"><span>Quantidade</span><span>${r.qtdCompra} peças</span></div>
-    <div class="row subtotal"><span>Valor Total da Compra</span><span>${R$(r.valorTotalAtacado)}</span></div>
-  </div>
-  <div class="footer">
-    <span>Samanta Gomes Fashion Office</span>
-    <span>Gerado em ${new Date().toLocaleDateString('pt-BR')}</span>
-  </div>
-</div>`).join('')}
+</div>
+
+<div class="footer">
+  <span>Samanta Gomes Fashion Office</span>
+  <span>Gerado em ${hoje.toLocaleDateString('pt-BR')}</span>
+</div>
 <script>setTimeout(()=>window.print(),300)</script>
 </body></html>`)
     w.document.close()
@@ -422,7 +459,7 @@ ${resultados.map(r=>`
         <button onClick={printFichasTodas}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
           style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
-          <Printer size={13}/> Fichas de Revenda — Todas as Peças (PDF)
+          <Printer size={13}/> Orçamento de Revenda — Todas as Peças (PDF)
         </button>
       </div>
 
