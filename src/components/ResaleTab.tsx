@@ -17,9 +17,11 @@ interface CustoPct  { id:string; nome:string; pct:number }
 type ModoPreco = 'margem' | 'markup'
 interface Pagamento {
   entrada:number            // R$ pago na aprovação do pedido
+  dataEntrada:string        // data de pagamento da entrada, formato YYYY-MM-DD
   parceladoCartao:number    // R$ que você recebe pela parte no cartão (sem juros — os juros são por conta do cliente)
   parcelasQtd:number        // em quantas vezes
-  jurosCartaoCliente:number // opcional, só informativo: valor com juros que aparece na fatura do cliente
+  taxaJurosCartao:number    // % de juros ao mês da maquininha — usado pra CALCULAR o valor com juros, não digitado à mão
+  dataParcelamento:string   // data da 1ª parcela do cartão, formato YYYY-MM-DD
   dataRestante:string       // data de vencimento do restante (30 dias), formato YYYY-MM-DD
 }
 interface Config {
@@ -67,13 +69,16 @@ const SUGESTOES_PCT = [
   'Comissão de marketplace', 'Outro',
 ]
 
-function dataMais30Dias(){
-  const d=new Date(); d.setDate(d.getDate()+30)
+function dataHoje(){ return new Date().toISOString().slice(0,10) }
+function dataMaisDias(n:number){
+  const d=new Date(); d.setDate(d.getDate()+n)
   return d.toISOString().slice(0,10)
 }
 
 const PAGAMENTO_DEFAULT:Pagamento = {
-  entrada:0, parceladoCartao:0, parcelasQtd:1, jurosCartaoCliente:0, dataRestante:dataMais30Dias(),
+  entrada:0, dataEntrada:dataHoje(),
+  parceladoCartao:0, parcelasQtd:1, taxaJurosCartao:0, dataParcelamento:dataHoje(),
+  dataRestante:dataMaisDias(30),
 }
 
 const DEFAULT:Config = {
@@ -173,13 +178,22 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   const current = selectedCod?resultados.find(r=>r.cod===selectedCod):null
 
   const totalGeralCompra = useMemo(()=>resultados.reduce((s,r)=>s+r.valorTotalAtacado,0),[resultados])
+  // O que abate a dívida com você é sempre o valor SEM juros — os juros da
+  // maquininha vão pra administradora do cartão, não pra você.
   const restantePagamento = totalGeralCompra-cfg.pagamento.entrada-cfg.pagamento.parceladoCartao
   const parcelaValor = cfg.pagamento.parcelasQtd>0?cfg.pagamento.parceladoCartao/cfg.pagamento.parcelasQtd:0
-  const parcelaJurosValor = cfg.pagamento.parcelasQtd>0?cfg.pagamento.jurosCartaoCliente/cfg.pagamento.parcelasQtd:0
-  const dataRestanteFmt = (()=>{
-    const [y,m,d]=cfg.pagamento.dataRestante.split('-')
-    return y&&m&&d?`${d}/${m}/${y}`:cfg.pagamento.dataRestante
-  })()
+  // Fórmula de juros compostos ao mês (padrão financeiro de parcelamento) —
+  // calculado, não digitado à mão, pra poder reusar com qualquer cliente
+  // só trocando a taxa: valorComJuros = capital × (1+taxa)^parcelas
+  const valorComJuros = cfg.pagamento.parceladoCartao*Math.pow(1+cfg.pagamento.taxaJurosCartao/100,cfg.pagamento.parcelasQtd)
+  const parcelaJurosValor = cfg.pagamento.parcelasQtd>0?valorComJuros/cfg.pagamento.parcelasQtd:0
+  const fmtData=(s:string)=>{
+    const [y,m,d]=s.split('-')
+    return y&&m&&d?`${d}/${m}/${y}`:s
+  }
+  const dataEntradaFmt = fmtData(cfg.pagamento.dataEntrada)
+  const dataParcelamentoFmt = fmtData(cfg.pagamento.dataParcelamento)
+  const dataRestanteFmt = fmtData(cfg.pagamento.dataRestante)
 
   /* ── Ficha de revenda de uma peça (PDF) ─────────────── */
   const printFicha=(r:typeof resultados[number])=>{
@@ -352,13 +366,13 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
     <div class="payment-item">
       <div class="label">Entrada</div>
       <div class="value">${R$(cfg.pagamento.entrada)}</div>
-      <div class="note">Na aprovação do pedido</div>
+      <div class="note">Pagamento em ${dataEntradaFmt}</div>
     </div>
     <div class="payment-item">
       <div class="label">Parcelado no Cartão</div>
       <div class="value">${R$(cfg.pagamento.parceladoCartao)}</div>
-      <div class="note">${cfg.pagamento.parcelasQtd}× de ${R$(parcelaValor)}</div>
-      ${cfg.pagamento.jurosCartaoCliente>0?`<div class="note">Com juros da maquininha: ${cfg.pagamento.parcelasQtd}× de ${R$(parcelaJurosValor)} (total ${R$(cfg.pagamento.jurosCartaoCliente)} na fatura)</div>`:''}
+      <div class="note">${cfg.pagamento.parcelasQtd}× de ${R$(parcelaValor)} — 1ª parcela em ${dataParcelamentoFmt}</div>
+      ${cfg.pagamento.taxaJurosCartao>0?`<div class="note">Com juros da maquininha: ${cfg.pagamento.parcelasQtd}× de ${R$(parcelaJurosValor)} (total ${R$(valorComJuros)} na fatura dela)</div>`:''}
     </div>
     <div class="payment-item">
       <div class="label">Restante</div>
@@ -637,19 +651,34 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
         </div>
       </div>
 
-      <div className="rounded-xl p-4 flex flex-col gap-3" style={{background:C.surface2,border:`1px solid ${C.border}`}}>
+      <div className="rounded-xl p-4 flex flex-col gap-4" style={{background:C.surface2,border:`1px solid ${C.border}`}}>
         <p className="text-xs uppercase tracking-wide" style={{color:C.muted}}>
-          Forma de Pagamento (aparece no Orçamento em PDF, vale pro pedido inteiro)
+          Forma de Pagamento (aparece no Orçamento em PDF, vale pro pedido inteiro) — mesma fórmula pra qualquer cliente, só troca os valores
         </p>
-        <div className="flex flex-wrap items-end gap-6">
+
+        {/* Entrada */}
+        <div className="flex flex-wrap items-end gap-6 pb-3" style={{borderBottom:`1px solid ${C.border}`}}>
+          <span className="text-xs font-bold uppercase tracking-wide w-20" style={{color:C.purpleLt}}>1. Entrada</span>
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Entrada (R$)</label>
+            <label className="text-xs" style={{color:C.muted}}>Valor (R$)</label>
             <NInput v={cfg.pagamento.entrada} set={v=>setPagamento('entrada',v)} step={10} color={C.purpleLt} bg={C.purpleBg}/>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Parcelado no Cartão (R$)</label>
+            <label className="text-xs" style={{color:C.muted}}>Data de Pagamento</label>
+            <input type="date" value={cfg.pagamento.dataEntrada}
+              onChange={e=>setPagamento('dataEntrada',e.target.value)}
+              className="rounded px-2 py-1 text-sm focus:outline-none"
+              style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
+          </div>
+        </div>
+
+        {/* Parcelado no cartão */}
+        <div className="flex flex-wrap items-end gap-6 pb-3" style={{borderBottom:`1px solid ${C.border}`}}>
+          <span className="text-xs font-bold uppercase tracking-wide w-20" style={{color:C.purpleLt}}>2. Cartão</span>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Valor Parcelado (R$)</label>
             <NInput v={cfg.pagamento.parceladoCartao} set={v=>setPagamento('parceladoCartao',v)} step={10} color={C.purpleLt} bg={C.purpleBg}/>
-            <span className="text-xs" style={{color:C.muted}}>Valor que você recebe — sem os juros do cartão</span>
+            <span className="text-xs" style={{color:C.muted}}>O que você recebe — sem juros</span>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs" style={{color:C.muted}}>Nº de Parcelas</label>
@@ -658,22 +687,33 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
               <span className="text-xs" style={{color:C.muted}}>{cfg.pagamento.parcelasQtd}× de {R$(parcelaValor)}</span>}
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Valor com Juros na Fatura dela (R$, opcional)</label>
-            <NInput v={cfg.pagamento.jurosCartaoCliente} set={v=>setPagamento('jurosCartaoCliente',v)} step={10} color={C.yellow} bg="#1C1A0E"/>
-            {cfg.pagamento.jurosCartaoCliente>0&&
-              <span className="text-xs" style={{color:C.muted}}>{cfg.pagamento.parcelasQtd}× de {R$(parcelaJurosValor)}</span>}
-            <span className="text-xs" style={{color:C.muted}}>Só informativo — não entra na sua conta, juros são por conta dela</span>
+            <label className="text-xs" style={{color:C.muted}}>Taxa de Juros da Maquininha (% ao mês)</label>
+            <NInput v={cfg.pagamento.taxaJurosCartao} set={v=>setPagamento('taxaJurosCartao',v)} step={0.1} color={C.yellow} bg="#1C1A0E" w="w-20"/>
+            {cfg.pagamento.taxaJurosCartao>0&&cfg.pagamento.parceladoCartao>0&&
+              <span className="text-xs" style={{color:C.muted}}>Calculado: {cfg.pagamento.parcelasQtd}× de {R$(parcelaJurosValor)} (total {R$(valorComJuros)} na fatura dela — juros não entram na sua conta)</span>}
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Vencimento do Restante</label>
+            <label className="text-xs" style={{color:C.muted}}>1ª Parcela em</label>
+            <input type="date" value={cfg.pagamento.dataParcelamento}
+              onChange={e=>setPagamento('dataParcelamento',e.target.value)}
+              className="rounded px-2 py-1 text-sm focus:outline-none"
+              style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
+          </div>
+        </div>
+
+        {/* Restante */}
+        <div className="flex flex-wrap items-end gap-6">
+          <span className="text-xs font-bold uppercase tracking-wide w-20" style={{color:C.purpleLt}}>3. Restante</span>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Valor (calculado)</label>
+            <span className="text-lg font-bold" style={{color:C.green}}>{R$(restantePagamento)}</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Vencimento</label>
             <input type="date" value={cfg.pagamento.dataRestante}
               onChange={e=>setPagamento('dataRestante',e.target.value)}
               className="rounded px-2 py-1 text-sm focus:outline-none"
               style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{color:C.muted}}>Restante (calculado)</label>
-            <span className="text-lg font-bold" style={{color:C.green}}>{R$(restantePagamento)}</span>
           </div>
         </div>
       </div>
