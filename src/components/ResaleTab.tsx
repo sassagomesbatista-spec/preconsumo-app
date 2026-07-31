@@ -28,6 +28,9 @@ interface Config {
   modo:ModoPreco; margemCliente:number; markupCliente:number; custosCliente:CustoItem[]
   custosPercentuais:CustoPct[]      // taxas de venda em % do preço (plataforma, gateway etc.)
   qtdCompra:Record<string,number>   // quantidade que o cliente vai comprar, por código de modelo
+  // Se um código não aparece aqui, é tratado como incluído (true) — assim
+  // orçamentos antigos continuam com tudo selecionado, sem precisar migrar nada.
+  selecionados:Record<string,boolean>
   pagamento:Pagamento
 }
 
@@ -84,6 +87,7 @@ const PAGAMENTO_DEFAULT:Pagamento = {
 const DEFAULT:Config = {
   modo:'margem', margemCliente:40, markupCliente:2,
   custosCliente:CUSTOS_DEFAULT, custosPercentuais:PERCENTUAIS_DEFAULT, qtdCompra:{},
+  selecionados:{},
   pagamento:PAGAMENTO_DEFAULT,
 }
 
@@ -175,9 +179,20 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
 
   const setQtdCompra=(cod:string,qtd:number)=>setCfg(p=>({...p,qtdCompra:{...p.qtdCompra,[cod]:qtd}}))
 
+  const isSelecionado=(cod:string)=>cfg.selecionados[cod]??true
+  const toggleSelecionado=(cod:string)=>setCfg(p=>({...p,selecionados:{...p.selecionados,[cod]:!isSelecionado(cod)}}))
+  const selecionarTodos=(sel:boolean)=>setCfg(p=>({...p,
+    selecionados:Object.fromEntries(resultados.map(r=>[r.cod,sel]))}))
+
   const current = selectedCod?resultados.find(r=>r.cod===selectedCod):null
 
-  const totalGeralCompra = useMemo(()=>resultados.reduce((s,r)=>s+r.valorTotalAtacado,0),[resultados])
+  // Só as peças marcadas entram no pedido/orçamento — o cliente às vezes
+  // compra só parte do que foi desenvolvido, não tudo.
+  const resultadosPedido = useMemo(()=>resultados.filter(r=>isSelecionado(r.cod)),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [resultados,cfg.selecionados])
+
+  const totalGeralCompra = useMemo(()=>resultadosPedido.reduce((s,r)=>s+r.valorTotalAtacado,0),[resultadosPedido])
   // O que abate a dívida com você é sempre o valor SEM juros — os juros da
   // maquininha vão pra administradora do cartão, não pra você.
   const restantePagamento = totalGeralCompra-cfg.pagamento.entrada-cfg.pagamento.parceladoCartao
@@ -263,13 +278,14 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   /* ── Fichas de revenda de todas as peças, uma por página (PDF) ── */
   /* ── Orçamento de revenda: documento único, com total geral no final ── */
   const printFichasTodas=()=>{
+    if(resultadosPedido.length===0){window.alert('Nenhuma peça marcada pro pedido — marca pelo menos uma na lista de Modelos.');return}
     const w=window.open('','_blank','width=900,height=1000')
     if(!w) return
     const logoUrl=`${window.location.origin}/logo.png`
     const hoje=new Date()
     const validade=new Date(hoje.getTime()+7*24*60*60*1000)
-    const totalGeral=resultados.reduce((s,r)=>s+r.valorTotalAtacado,0)
-    const totalPecas=resultados.reduce((s,r)=>s+r.qtdCompra,0)
+    const totalGeral=resultadosPedido.reduce((s,r)=>s+r.valorTotalAtacado,0)
+    const totalPecas=resultadosPedido.reduce((s,r)=>s+r.qtdCompra,0)
     w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>Orçamento de Revenda</title>
@@ -331,7 +347,7 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
 <div class="accent-bar"></div>
 
 <div class="meta">
-  <div><div class="label">Peças no orçamento</div><div class="value">${resultados.length} modelo(s) &nbsp;·&nbsp; ${totalPecas} peças</div></div>
+  <div><div class="label">Peças no orçamento</div><div class="value">${resultadosPedido.length} modelo(s) &nbsp;·&nbsp; ${totalPecas} peças</div></div>
   <div><div class="label">Condição</div><div class="value">Preços válidos para a quantidade indicada por modelo</div></div>
 </div>
 
@@ -340,7 +356,7 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
     <th>Código</th><th>Peça</th><th>Preço Unitário</th><th>Qtd.</th><th>Valor Total</th>
   </tr></thead>
   <tbody>
-  ${resultados.map(r=>`
+  ${resultadosPedido.map(r=>`
     <tr>
       <td class="cod">${r.cod}</td>
       <td>${r.tipo}</td>
@@ -392,6 +408,7 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
   }
 
   const printProposta = ()=>{
+    if(resultadosPedido.length===0){window.alert('Nenhuma peça marcada pro pedido — marca pelo menos uma na lista de Modelos.');return}
     const w=window.open('','_blank','width=1100,height=900')
     if(!w) return
     w.document.write(`<!DOCTYPE html><html><head>
@@ -419,7 +436,7 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
     <th>Código</th><th>Tipo</th><th>Preço de Atacado</th><th>Preço de Revenda Sugerido</th><th>Qtd.</th><th>Valor Total da Compra</th>
   </tr></thead>
   <tbody>
-  ${resultados.map(r=>`
+  ${resultadosPedido.map(r=>`
     <tr>
       <td class="left">${r.cod}</td>
       <td class="left">${r.tipo}</td>
@@ -432,8 +449,8 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
   <tfoot>
     <tr style="font-weight:700">
       <td class="left" colspan="4">VALOR TOTAL DA COMPRA</td>
-      <td>${resultados.reduce((s,r)=>s+r.qtdCompra,0)}</td>
-      <td class="price">${R$(resultados.reduce((s,r)=>s+r.valorTotalAtacado,0))}</td>
+      <td>${resultadosPedido.reduce((s,r)=>s+r.qtdCompra,0)}</td>
+      <td class="price">${R$(resultadosPedido.reduce((s,r)=>s+r.valorTotalAtacado,0))}</td>
     </tr>
   </tfoot>
 </table>
@@ -444,6 +461,7 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
   }
 
   const exportRevendaExcel=async()=>{
+    if(resultadosPedido.length===0){window.alert('Nenhuma peça marcada pro pedido — marca pelo menos uma na lista de Modelos.');return}
     const ExcelJS=(await import('exceljs')).default
     const wb=new ExcelJS.Workbook()
     wb.creator='Pré Consumo App'
@@ -466,7 +484,7 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
       cell.alignment={horizontal:'center',vertical:'middle',wrapText:true}
     })
 
-    resultados.forEach((r,i)=>{
+    resultadosPedido.forEach((r,i)=>{
       const rowNum=i+2
       const row=ws.addRow({
         cod:r.cod, tipo:r.tipo, atacado:r.precoAtacado, revenda:r.precoRevenda, qtd:r.qtdCompra,
@@ -482,7 +500,7 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
       })
     })
 
-    const lastRow=resultados.length+1
+    const lastRow=resultadosPedido.length+1
     const totalRow=ws.addRow({tipo:'VALOR TOTAL DA COMPRA'})
     totalRow.getCell('qtd').value={formula:`SUM(E2:E${lastRow})`}
     totalRow.getCell('total').value={formula:`SUM(F2:F${lastRow})`}
@@ -725,20 +743,36 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
       </div>
 
       <div className="flex gap-4" style={{minHeight:0}}>
-        <div className="flex flex-col gap-1 shrink-0" style={{width:200}}>
-          <p className="text-xs uppercase tracking-wide mb-1" style={{color:C.muted}}>Modelos</p>
-          {resultados.map(r=>(
+        <div className="flex flex-col gap-1 shrink-0" style={{width:220}}>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs uppercase tracking-wide" style={{color:C.muted}}>
+              Modelos <span style={{color:C.purpleLt}}>({resultadosPedido.length}/{resultados.length} no pedido)</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-3 mb-1">
+            <button onClick={()=>selecionarTodos(true)} className="text-xs" style={{color:C.teal}}>Marcar todos</button>
+            <button onClick={()=>selecionarTodos(false)} className="text-xs" style={{color:C.pink}}>Desmarcar todos</button>
+          </div>
+          {resultados.map(r=>{
+            const sel=isSelecionado(r.cod)
+            return(
             <button key={r.cod} onClick={()=>setSelectedCod(r.cod)}
-              className="flex flex-col items-start px-3 py-2 rounded-lg text-left transition-all"
+              className="flex items-start gap-2 px-3 py-2 rounded-lg text-left transition-all"
               style={{
                 background:selectedCod===r.cod?C.purpleBg:C.surface,
                 border:`1px solid ${selectedCod===r.cod?C.purple:C.border}`,
+                opacity:sel?1:0.5,
               }}>
-              <span className="font-mono text-xs" style={{color:selectedCod===r.cod?C.purple:C.muted}}>{r.cod}</span>
-              <span className="text-sm font-medium" style={{color:C.text}}>{r.tipo}</span>
-              <span className="text-xs font-bold mt-0.5" style={{color:C.green}}>{R$(r.precoRevenda)}</span>
+              <input type="checkbox" checked={sel} onClick={e=>e.stopPropagation()}
+                onChange={()=>toggleSelecionado(r.cod)}
+                className="mt-1 shrink-0" style={{accentColor:C.teal}}/>
+              <div className="flex flex-col items-start">
+                <span className="font-mono text-xs" style={{color:selectedCod===r.cod?C.purple:C.muted}}>{r.cod}</span>
+                <span className="text-sm font-medium" style={{color:C.text}}>{r.tipo}</span>
+                <span className="text-xs font-bold mt-0.5" style={{color:C.green}}>{R$(r.precoRevenda)}</span>
+              </div>
             </button>
-          ))}
+          )})}
         </div>
 
         {current?(
