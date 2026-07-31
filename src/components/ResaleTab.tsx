@@ -706,8 +706,6 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
           <div className="flex flex-col gap-1">
             <label className="text-xs" style={{color:C.muted}}>Nº de Parcelas</label>
             <NInput v={cfg.pagamento.parcelasQtd} set={v=>setPagamento('parcelasQtd',Math.max(1,v))} step={1} color={C.text} bg={C.surface} w="w-16"/>
-            {cfg.pagamento.parceladoCartao>0&&
-              <span className="text-xs" style={{color:C.muted}}>{cfg.pagamento.parcelasQtd}× de {R$(parcelaValor)}</span>}
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs" style={{color:C.muted}}>Taxa de Juros da Maquininha (% ao mês)</label>
