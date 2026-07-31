@@ -148,6 +148,134 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
 
   const current = selectedCod?resultados.find(r=>r.cod===selectedCod):null
 
+  /* ── Ficha de revenda de uma peça (PDF) ─────────────── */
+  const printFicha=(r:typeof resultados[number])=>{
+    const w=window.open('','_blank','width=820,height=960')
+    if(!w) return
+    const logoUrl=`${window.location.origin}/logo.png`
+    w.document.write(`<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<title>Ficha de Revenda — ${r.cod}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1C1C1E;background:#fff;padding:36px 40px;font-size:12.5px;line-height:1.5}
+  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0;padding-bottom:18px;border-bottom:3px solid #1C1C1E}
+  .logo-wrap{background:#fff;padding:6px 10px;border:1px solid #E5E5E5;border-radius:4px;display:inline-flex;align-items:center}
+  .logo-wrap img{height:38px;width:auto;display:block}
+  .ref{text-align:right}
+  .ref .doc-title{font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#999;margin-bottom:4px}
+  .ref h2{font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#1C1C1E}
+  .ref p{color:#666;font-size:11px;margin-top:2px}
+  .accent-bar{height:3px;background:linear-gradient(to right,#C9A96E,#E8D5B0,#C9A96E);margin-bottom:22px}
+  .section{margin-bottom:14px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid #F0EDEA;font-size:13px}
+  .row.subtotal{background:#FAF8F5;font-weight:600}
+  .row.price-proposto{background:#F7F5F2;color:#666;font-size:12px;padding:7px 14px}
+  .row.price-real{background:linear-gradient(135deg,#C9A96E 0%,#B8864E 100%);color:#fff;font-size:22px;font-weight:800;padding:16px 14px;letter-spacing:-0.3px;border-radius:2px;margin-top:2px}
+  .row.price-real .label{display:flex;flex-direction:column}
+  .row.price-real .label small{font-size:9px;font-weight:400;letter-spacing:1.5px;text-transform:uppercase;opacity:.85;margin-bottom:1px}
+  .row.total{background:#1C1C1E;color:#fff;font-weight:700;font-size:14px;padding:10px 14px;margin-top:16px}
+  .footer{margin-top:28px;padding-top:10px;border-top:1px solid #E5E5E5;font-size:9.5px;color:#BBBBBB;display:flex;justify-content:space-between}
+  @media print{body{padding:20px 24px}button{display:none}.row.total{-webkit-print-color-adjust:exact;print-color-adjust:exact}.row.price-real{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head><body>
+
+<div class="header">
+  <div class="logo-wrap"><img src="${logoUrl}" alt="Samanta Gomes"/></div>
+  <div class="ref">
+    <div class="doc-title">Ficha de Revenda</div>
+    <h2>REF ${r.cod}</h2>
+    <p>${r.tipo}</p>
+  </div>
+</div>
+<div class="accent-bar"></div>
+
+<div class="section">
+  <div class="row"><span>Preço de Atacado</span><span>${R$(r.precoAtacado)}</span></div>
+</div>
+
+<div class="row price-real">
+  <span class="label"><small>Preço de Revenda</small>SUGERIDO</span>
+  <span>${R$(r.precoRevenda)}</span>
+</div>
+
+<div class="section" style="margin-top:16px">
+  <div class="row"><span>Quantidade</span><span>${r.qtdCompra} peças</span></div>
+  <div class="row subtotal"><span>Valor Total da Compra</span><span>${R$(r.valorTotalRevenda)}</span></div>
+</div>
+
+<div class="footer">
+  <span>Samanta Gomes Fashion Office</span>
+  <span>Gerado em ${new Date().toLocaleDateString('pt-BR')}</span>
+</div>
+<script>setTimeout(()=>window.print(),300)</script>
+</body></html>`)
+    w.document.close()
+  }
+
+  /* ── Fichas de revenda de todas as peças, uma por página (PDF) ── */
+  const printFichasTodas=()=>{
+    const w=window.open('','_blank','width=820,height=960')
+    if(!w) return
+    const logoUrl=`${window.location.origin}/logo.png`
+    w.document.write(`<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<title>Fichas de Revenda</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;color:#1C1C1E;background:#fff;font-size:12.5px;line-height:1.5}
+  .ficha{padding:36px 40px;page-break-after:always}
+  .ficha:last-child{page-break-after:auto}
+  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0;padding-bottom:18px;border-bottom:3px solid #1C1C1E}
+  .logo-wrap{background:#fff;padding:6px 10px;border:1px solid #E5E5E5;border-radius:4px;display:inline-flex;align-items:center}
+  .logo-wrap img{height:38px;width:auto;display:block}
+  .ref{text-align:right}
+  .ref .doc-title{font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#999;margin-bottom:4px}
+  .ref h2{font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#1C1C1E}
+  .ref p{color:#666;font-size:11px;margin-top:2px}
+  .accent-bar{height:3px;background:linear-gradient(to right,#C9A96E,#E8D5B0,#C9A96E);margin-bottom:22px}
+  .section{margin-bottom:14px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid #F0EDEA;font-size:13px}
+  .row.subtotal{background:#FAF8F5;font-weight:600}
+  .row.price-real{background:linear-gradient(135deg,#C9A96E 0%,#B8864E 100%);color:#fff;font-size:22px;font-weight:800;padding:16px 14px;letter-spacing:-0.3px;border-radius:2px;margin-top:2px}
+  .row.price-real .label{display:flex;flex-direction:column}
+  .row.price-real .label small{font-size:9px;font-weight:400;letter-spacing:1.5px;text-transform:uppercase;opacity:.85;margin-bottom:1px}
+  .footer{margin-top:28px;padding-top:10px;border-top:1px solid #E5E5E5;font-size:9.5px;color:#BBBBBB;display:flex;justify-content:space-between}
+  @media print{.row.price-real{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head><body>
+${resultados.map(r=>`
+<div class="ficha">
+  <div class="header">
+    <div class="logo-wrap"><img src="${logoUrl}" alt="Samanta Gomes"/></div>
+    <div class="ref">
+      <div class="doc-title">Ficha de Revenda</div>
+      <h2>REF ${r.cod}</h2>
+      <p>${r.tipo}</p>
+    </div>
+  </div>
+  <div class="accent-bar"></div>
+  <div class="section">
+    <div class="row"><span>Preço de Atacado</span><span>${R$(r.precoAtacado)}</span></div>
+  </div>
+  <div class="row price-real">
+    <span class="label"><small>Preço de Revenda</small>SUGERIDO</span>
+    <span>${R$(r.precoRevenda)}</span>
+  </div>
+  <div class="section" style="margin-top:16px">
+    <div class="row"><span>Quantidade</span><span>${r.qtdCompra} peças</span></div>
+    <div class="row subtotal"><span>Valor Total da Compra</span><span>${R$(r.valorTotalRevenda)}</span></div>
+  </div>
+  <div class="footer">
+    <span>Samanta Gomes Fashion Office</span>
+    <span>Gerado em ${new Date().toLocaleDateString('pt-BR')}</span>
+  </div>
+</div>`).join('')}
+<script>setTimeout(()=>window.print(),300)</script>
+</body></html>`)
+    w.document.close()
+  }
+
   const printProposta = ()=>{
     const w=window.open('','_blank','width=1100,height=900')
     if(!w) return
@@ -288,6 +416,11 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
           style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
           <Printer size={13}/> Proposta de Revenda (PDF)
+        </button>
+        <button onClick={printFichasTodas}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
+          style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
+          <Printer size={13}/> Fichas de Revenda — Todas as Peças (PDF)
         </button>
       </div>
 
@@ -443,6 +576,13 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
               </div>
               <Row label={`Valor Total da Compra (${current.qtdCompra} peças)`} value={R$(current.valorTotalRevenda)} accent={C.purpleLt}/>
               <Row label={`Lucro Total do Cliente (${current.qtdCompra} peças)`} value={R$(current.lucroTotalCliente)} bold accent={C.green}/>
+            </div>
+            <div className="px-5 py-3" style={{borderTop:`1px solid ${C.border}`}}>
+              <button onClick={()=>printFicha(current)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
+                style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
+                <Printer size={13}/> Ficha de Revenda desta peça (PDF)
+              </button>
             </div>
           </div>
         ):(
