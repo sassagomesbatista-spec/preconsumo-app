@@ -15,10 +15,17 @@ const C = {
 interface CustoItem { id:string; nome:string; qtd:number; preco:number }
 interface CustoPct  { id:string; nome:string; pct:number }
 type ModoPreco = 'margem' | 'markup'
+interface Pagamento {
+  entrada:number            // R$ pago na aprovação do pedido
+  parceladoCartao:number    // R$ total parcelado no cartão
+  parcelasQtd:number        // em quantas vezes
+  dataRestante:string       // data de vencimento do restante (30 dias), formato YYYY-MM-DD
+}
 interface Config {
   modo:ModoPreco; margemCliente:number; markupCliente:number; custosCliente:CustoItem[]
   custosPercentuais:CustoPct[]      // taxas de venda em % do preço (plataforma, gateway etc.)
   qtdCompra:Record<string,number>   // quantidade que o cliente vai comprar, por código de modelo
+  pagamento:Pagamento
 }
 
 function uid(){ return Math.random().toString(36).slice(2,9) }
@@ -59,9 +66,19 @@ const SUGESTOES_PCT = [
   'Comissão de marketplace', 'Outro',
 ]
 
+function dataMais30Dias(){
+  const d=new Date(); d.setDate(d.getDate()+30)
+  return d.toISOString().slice(0,10)
+}
+
+const PAGAMENTO_DEFAULT:Pagamento = {
+  entrada:0, parceladoCartao:0, parcelasQtd:1, dataRestante:dataMais30Dias(),
+}
+
 const DEFAULT:Config = {
   modo:'margem', margemCliente:40, markupCliente:2,
   custosCliente:CUSTOS_DEFAULT, custosPercentuais:PERCENTUAIS_DEFAULT, qtdCompra:{},
+  pagamento:PAGAMENTO_DEFAULT,
 }
 
 const R$  = (n:number) => n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
@@ -104,14 +121,16 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   const [cfg,setCfg] = useState<Config>(()=>{
     if(initialConfig) return {...DEFAULT,...initialConfig,
       custosCliente:initialConfig.custosCliente??CUSTOS_DEFAULT,
-      custosPercentuais:initialConfig.custosPercentuais??PERCENTUAIS_DEFAULT}
+      custosPercentuais:initialConfig.custosPercentuais??PERCENTUAIS_DEFAULT,
+      pagamento:{...PAGAMENTO_DEFAULT,...initialConfig.pagamento}}
     try{
       const s=localStorage.getItem('revenda-v2')
       if(s){
         const p=JSON.parse(s)
         return {...DEFAULT,...p,
           custosCliente:p.custosCliente??CUSTOS_DEFAULT,
-          custosPercentuais:p.custosPercentuais??PERCENTUAIS_DEFAULT}
+          custosPercentuais:p.custosPercentuais??PERCENTUAIS_DEFAULT,
+          pagamento:{...PAGAMENTO_DEFAULT,...p.pagamento}}
       }
     }catch{}
     return DEFAULT
@@ -125,6 +144,8 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
     setCfg(p=>({...p,custosCliente:fn(p.custosCliente)}))
   const setPercentuais=(fn:(arr:CustoPct[])=>CustoPct[])=>
     setCfg(p=>({...p,custosPercentuais:fn(p.custosPercentuais)}))
+  const setPagamento=<K extends keyof Pagamento>(k:K,v:Pagamento[K])=>
+    setCfg(p=>({...p,pagamento:{...p.pagamento,[k]:v}}))
 
   const custosTotal = useMemo(()=>cfg.custosCliente.reduce((s,i)=>s+i.qtd*i.preco,0),[cfg.custosCliente])
   const pctTotal = useMemo(()=>cfg.custosPercentuais.reduce((s,i)=>s+i.pct,0),[cfg.custosPercentuais])
@@ -149,6 +170,14 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   const setQtdCompra=(cod:string,qtd:number)=>setCfg(p=>({...p,qtdCompra:{...p.qtdCompra,[cod]:qtd}}))
 
   const current = selectedCod?resultados.find(r=>r.cod===selectedCod):null
+
+  const totalGeralCompra = useMemo(()=>resultados.reduce((s,r)=>s+r.valorTotalAtacado,0),[resultados])
+  const restantePagamento = totalGeralCompra-cfg.pagamento.entrada-cfg.pagamento.parceladoCartao
+  const parcelaValor = cfg.pagamento.parcelasQtd>0?cfg.pagamento.parceladoCartao/cfg.pagamento.parcelasQtd:0
+  const dataRestanteFmt = (()=>{
+    const [y,m,d]=cfg.pagamento.dataRestante.split('-')
+    return y&&m&&d?`${d}/${m}/${y}`:cfg.pagamento.dataRestante
+  })()
 
   /* ── Ficha de revenda de uma peça (PDF) ─────────────── */
   const printFicha=(r:typeof resultados[number])=>{
@@ -260,6 +289,15 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   .totals-row{display:flex;justify-content:space-between;padding:8px 12px;font-size:12.5px;color:#666;border-bottom:1px solid #F0EDEA}
   .totals-row.grand{background:linear-gradient(135deg,#C9A96E 0%,#B8864E 100%);color:#fff;font-size:19px;font-weight:800;padding:16px 14px;border-radius:2px;margin-top:8px;letter-spacing:-0.3px}
   .totals-row.grand small{display:block;font-size:9px;font-weight:400;letter-spacing:1.5px;text-transform:uppercase;opacity:.85;margin-bottom:2px}
+  /* Forma de pagamento */
+  .payment{margin-top:28px;border:1px solid #EAD9BF;border-radius:4px;overflow:hidden}
+  .payment-title{background:#F7F5F2;padding:8px 14px;font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#8C6D46}
+  .payment-grid{display:flex}
+  .payment-item{flex:1;padding:12px 14px;border-right:1px solid #F0EDEA}
+  .payment-item:last-child{border-right:none}
+  .payment-item .label{font-size:10px;color:#999;margin-bottom:3px}
+  .payment-item .value{font-size:15px;font-weight:700;color:#1C1C1E}
+  .payment-item .note{font-size:10.5px;color:#666;margin-top:2px}
   /* Footer */
   .footer{margin-top:32px;padding-top:12px;border-top:1px solid #E5E5E5;font-size:9.5px;color:#BBBBBB;display:flex;justify-content:space-between}
   @media print{.totals-row.grand{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact}tbody tr:nth-child(even){-webkit-print-color-adjust:exact;print-color-adjust:exact}}
@@ -305,6 +343,27 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
     </div>
   </div>
 </div>
+
+${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0)?`<div class="payment">
+  <div class="payment-title">Forma de Pagamento</div>
+  <div class="payment-grid">
+    <div class="payment-item">
+      <div class="label">Entrada</div>
+      <div class="value">${R$(cfg.pagamento.entrada)}</div>
+      <div class="note">Na aprovação do pedido</div>
+    </div>
+    <div class="payment-item">
+      <div class="label">Parcelado no Cartão</div>
+      <div class="value">${R$(cfg.pagamento.parceladoCartao)}</div>
+      <div class="note">${cfg.pagamento.parcelasQtd}× de ${R$(parcelaValor)}</div>
+    </div>
+    <div class="payment-item">
+      <div class="label">Restante</div>
+      <div class="value">${R$(restantePagamento)}</div>
+      <div class="note">Vencimento: ${dataRestanteFmt}</div>
+    </div>
+  </div>
+</div>`:''}
 
 <div class="footer">
   <span>Samanta Gomes Fashion Office</span>
@@ -571,6 +630,39 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
               + Adicionar taxa
             </button>
             <span className="text-xs" style={{color:C.muted}}>Total: <strong style={{color:C.yellow}}>{pctTotal.toFixed(1)}%</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl p-4 flex flex-col gap-3" style={{background:C.surface2,border:`1px solid ${C.border}`}}>
+        <p className="text-xs uppercase tracking-wide" style={{color:C.muted}}>
+          Forma de Pagamento (aparece no Orçamento em PDF, vale pro pedido inteiro)
+        </p>
+        <div className="flex flex-wrap items-end gap-6">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Entrada (R$)</label>
+            <NInput v={cfg.pagamento.entrada} set={v=>setPagamento('entrada',v)} step={10} color={C.purpleLt} bg={C.purpleBg}/>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Parcelado no Cartão (R$)</label>
+            <NInput v={cfg.pagamento.parceladoCartao} set={v=>setPagamento('parceladoCartao',v)} step={10} color={C.purpleLt} bg={C.purpleBg}/>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Nº de Parcelas</label>
+            <NInput v={cfg.pagamento.parcelasQtd} set={v=>setPagamento('parcelasQtd',Math.max(1,v))} step={1} color={C.text} bg={C.surface} w="w-16"/>
+            {cfg.pagamento.parceladoCartao>0&&
+              <span className="text-xs" style={{color:C.muted}}>{cfg.pagamento.parcelasQtd}× de {R$(parcelaValor)}</span>}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Vencimento do Restante</label>
+            <input type="date" value={cfg.pagamento.dataRestante}
+              onChange={e=>setPagamento('dataRestante',e.target.value)}
+              className="rounded px-2 py-1 text-sm focus:outline-none"
+              style={{background:C.surface,border:`1px solid ${C.border}`,color:C.text}}/>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{color:C.muted}}>Restante (calculado)</label>
+            <span className="text-lg font-bold" style={{color:C.green}}>{R$(restantePagamento)}</span>
           </div>
         </div>
       </div>
