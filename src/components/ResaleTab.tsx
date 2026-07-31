@@ -175,6 +175,7 @@ export default function ResaleTab({precos,initialConfig,onConfigChange}:Props){
   const totalGeralCompra = useMemo(()=>resultados.reduce((s,r)=>s+r.valorTotalAtacado,0),[resultados])
   const restantePagamento = totalGeralCompra-cfg.pagamento.entrada-cfg.pagamento.parceladoCartao
   const parcelaValor = cfg.pagamento.parcelasQtd>0?cfg.pagamento.parceladoCartao/cfg.pagamento.parcelasQtd:0
+  const parcelaJurosValor = cfg.pagamento.parcelasQtd>0?cfg.pagamento.jurosCartaoCliente/cfg.pagamento.parcelasQtd:0
   const dataRestanteFmt = (()=>{
     const [y,m,d]=cfg.pagamento.dataRestante.split('-')
     return y&&m&&d?`${d}/${m}/${y}`:cfg.pagamento.dataRestante
@@ -357,7 +358,7 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
       <div class="label">Parcelado no Cartão</div>
       <div class="value">${R$(cfg.pagamento.parceladoCartao)}</div>
       <div class="note">${cfg.pagamento.parcelasQtd}× de ${R$(parcelaValor)}</div>
-      ${cfg.pagamento.jurosCartaoCliente>0?`<div class="note">Com juros da maquininha, total na fatura: ${R$(cfg.pagamento.jurosCartaoCliente)}</div>`:''}
+      ${cfg.pagamento.jurosCartaoCliente>0?`<div class="note">Com juros da maquininha: ${cfg.pagamento.parcelasQtd}× de ${R$(parcelaJurosValor)} (total ${R$(cfg.pagamento.jurosCartaoCliente)} na fatura)</div>`:''}
     </div>
     <div class="payment-item">
       <div class="label">Restante</div>
@@ -659,6 +660,8 @@ ${(cfg.pagamento.entrada>0||cfg.pagamento.parceladoCartao>0||restantePagamento>0
           <div className="flex flex-col gap-1">
             <label className="text-xs" style={{color:C.muted}}>Valor com Juros na Fatura dela (R$, opcional)</label>
             <NInput v={cfg.pagamento.jurosCartaoCliente} set={v=>setPagamento('jurosCartaoCliente',v)} step={10} color={C.yellow} bg="#1C1A0E"/>
+            {cfg.pagamento.jurosCartaoCliente>0&&
+              <span className="text-xs" style={{color:C.muted}}>{cfg.pagamento.parcelasQtd}× de {R$(parcelaJurosValor)}</span>}
             <span className="text-xs" style={{color:C.muted}}>Só informativo — não entra na sua conta, juros são por conta dela</span>
           </div>
           <div className="flex flex-col gap-1">
