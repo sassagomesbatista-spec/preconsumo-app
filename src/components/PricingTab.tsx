@@ -41,6 +41,10 @@ const BASE_DEFAULT:Record<string,BaseCoef> = {
   SHORT:{facil:.60,medio:.70,dificil:.80},   'SHORT DOOL':{facil:.60,medio:.70,dificil:.80},
   SOUTIEN:{facil:.60,medio:.70,dificil:.80}, TOP:{facil:.60,medio:.70,dificil:.80},
   VESTIDO:{facil:.60,medio:.70,dificil:.80},
+  // Adicionados: faltavam na tabela e caíam no fallback 0 (min/op sempre 0
+  // pra qualquer peça desses tipos, mesmo digitando Nº Operações)
+  REGATA:{facil:.60,medio:.70,dificil:.80},  JAQUETA:{facil:.60,medio:.70,dificil:.80},
+  COLETE:{facil:.60,medio:.70,dificil:.80},  CALCA:{facil:.60,medio:.70,dificil:.80},
 }
 
 const OC_GLOBAL_DEFAULT:CustoItem[] = [
@@ -243,8 +247,17 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
 
   const getCoef=(tipo:string,dif:'FACIL'|'MEDIO'|'DIFICIL')=>{
     const up=tipo.toUpperCase()
-    const k=Object.keys(cfg.base).find(x=>x===up||up.includes(x)||x.includes(up))
+    // Prioriza correspondência exata (evita ambiguidade quando dois tipos
+    // parecidos, ex. "REGATA" e "REGATA NADADOR", têm entradas próprias)
+    const exact=Object.keys(cfg.base).find(x=>x===up)
+    const k=exact??Object.keys(cfg.base).find(x=>up.includes(x)||x.includes(up))
     return k?cfg.base[k][dif.toLowerCase() as keyof BaseCoef]:0
+  }
+  // Tipo de peça sem nenhuma entrada correspondente na tabela de coeficientes
+  // (min/op sempre sai 0 pra ele, não importa o Nº de Operações digitado)
+  const tipoSemCoef=(tipo:string)=>{
+    const up=tipo.toUpperCase()
+    return !Object.keys(cfg.base).some(x=>x===up||up.includes(x)||x.includes(up))
   }
 
   const precoPorKg=useMemo(()=>{
@@ -782,6 +795,42 @@ ${m.ocItens.length>0?`<div class="section">
             </div>
           </div>
 
+          {/* Coeficientes de mão de obra (min/op) por tipo de peça */}
+          <div>
+            <p className="text-xs uppercase tracking-wide mb-2" style={{color:C.muted}}>
+              Coeficiente de Mão de Obra (min/op) por Tipo de Peça
+            </p>
+            <div className="flex flex-col gap-2">
+              {uniqPecas.map(tipo=>{
+                const up=tipo.toUpperCase()
+                const semCoef=tipoSemCoef(tipo)
+                const atual=cfg.base[up]??{facil:0,medio:0,dificil:0}
+                const setCoef=(campo:keyof BaseCoef,v:number)=>
+                  setCfg(p=>({...p,base:{...p.base,[up]:{...atual,[campo]:v}}}))
+                return(
+                  <div key={tipo} className="flex items-center gap-3 rounded-lg px-3 py-2 flex-wrap"
+                    style={{background:C.bg,border:`1px solid ${semCoef?C.pink:C.border}`}}>
+                    <span className="text-sm font-medium w-40" style={{color:C.text}}>{tipo}</span>
+                    {semCoef&&
+                      <span className="text-xs" style={{color:C.pink}}>
+                        sem coeficiente cadastrado — min/op sai 0
+                      </span>}
+                    {(['facil','medio','dificil'] as const).map(campo=>(
+                      <div key={campo} className="flex flex-col gap-0.5">
+                        <label className="text-[10px] uppercase tracking-wide" style={{color:C.muted}}>
+                          {campo}
+                        </label>
+                        <NInput v={atual[campo]} set={v=>setCoef(campo,v)} step={0.01} color={C.yellow} bg={C.surface2} w="w-16"/>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+              {uniqPecas.length===0&&
+                <p className="text-xs" style={{color:C.muted}}>Importe um PLM pra ver os tipos de peça aqui.</p>}
+            </div>
+          </div>
+
           {/* Tecidos */}
           <div>
             <p className="text-xs uppercase tracking-wide mb-2" style={{color:C.muted}}>Preço dos Tecidos</p>
@@ -943,6 +992,11 @@ ${m.ocItens.length>0?`<div class="section">
                         <span className="text-xs" style={{color:C.muted}}>
                           × {m.coef.toFixed(2)} min/op = <strong style={{color:C.yellow}}>{m.tempo.toFixed(1)} min</strong>
                           &nbsp;× {R$(cfg.custoMinuto)}/min
+                        </span>
+                      )}
+                      {m.nr>0&&m.coef===0&&(
+                        <span className="text-xs font-semibold" style={{color:C.pink}}>
+                          ⚠ "{m.tipo}" sem coeficiente cadastrado — abra Configurações ↓ e defina o min/op
                         </span>
                       )}
                     </div>
