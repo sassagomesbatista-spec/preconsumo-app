@@ -49,18 +49,22 @@ function loadPersisted(): PersistedState | null {
   } catch { return null }
 }
 
-// pricingJson guarda { pricing, revenda } desde que a aba Revenda foi criada.
+// pricingJson guarda { pricing, revenda, precos } desde que a Ordem de Produção
+// do ERP passou a puxar o preço unitário calculado aqui — "precos" é só o
+// resultado já calculado (AtacadoPreco[]), não outra config, pra o ERP não
+// precisar reimplementar a fórmula de precificação (base, tecido, outros
+// custos, nº de operações, ajuste manual por código...) do zero.
 // Projetos salvos antes disso têm o objeto de precificação "cru" nesse campo
-// (sem essas duas chaves) — trata como pricing legado, sem config de revenda.
-function splitPricingJson(raw: string | null | undefined): { pricing: unknown; revenda: unknown } {
-  if (!raw) return { pricing: null, revenda: null }
+// (sem essas chaves) — trata como pricing legado, sem revenda/precos.
+function splitPricingJson(raw: string | null | undefined): { pricing: unknown; revenda: unknown; precos: AtacadoPreco[] } {
+  if (!raw) return { pricing: null, revenda: null, precos: [] }
   try {
     const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && ('pricing' in parsed || 'revenda' in parsed)) {
-      return { pricing: parsed.pricing ?? null, revenda: parsed.revenda ?? null }
+    if (parsed && typeof parsed === 'object' && ('pricing' in parsed || 'revenda' in parsed || 'precos' in parsed)) {
+      return { pricing: parsed.pricing ?? null, revenda: parsed.revenda ?? null, precos: parsed.precos ?? [] }
     }
-    return { pricing: parsed, revenda: null }
-  } catch { return { pricing: null, revenda: null } }
+    return { pricing: parsed, revenda: null, precos: [] }
+  } catch { return { pricing: null, revenda: null, precos: [] } }
 }
 
 export default function App() {
@@ -92,7 +96,7 @@ export default function App() {
     try {
       const p = await loadProject.fetch({ id })
       const data = JSON.parse(p.dataJson) as ImportResult
-      const { pricing, revenda } = splitPricingJson(p.pricingJson)
+      const { pricing, revenda, precos } = splitPricingJson(p.pricingJson)
       setResult(data)
       setRows(data.rows)
       setClientName(p.clientName)
@@ -101,6 +105,7 @@ export default function App() {
       setErpQuoteNumber((p as any).erpQuoteNumber ?? null)
       setPricingConfig(pricing)
       setRevendaConfig(revenda)
+      setAtacadoPrecos(precos)
       setPricingKey(k => k + 1)
       setTab('dados')
     } catch {
@@ -126,7 +131,7 @@ useEffect(() => {
         result: { ...result, rows }, clientName, colecao, tab, currentProjectId, pricingConfig, revendaConfig,
       }))
     } catch { /* quota excedida, ignora */ }
-  }, [result, rows, clientName, colecao, tab, currentProjectId, pricingConfig, revendaConfig])
+  }, [result, rows, clientName, colecao, tab, currentProjectId, pricingConfig, revendaConfig, atacadoPrecos])
 
   // Autosave na nuvem (histórico compartilhado) — debounced
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -143,14 +148,16 @@ useEffect(() => {
         id: currentProjectId ?? undefined,
         clientName, colecao,
         dataJson: JSON.stringify({ ...result, rows, clientName, colecao }),
-        pricingJson: (pricingConfig || revendaConfig) ? JSON.stringify({ pricing: pricingConfig, revenda: revendaConfig }) : undefined,
+        pricingJson: (pricingConfig || revendaConfig || atacadoPrecos.length > 0)
+          ? JSON.stringify({ pricing: pricingConfig, revenda: revendaConfig, precos: atacadoPrecos })
+          : undefined,
       }, { onSettled: () => { savingRef.current = false } })
     }, 1500)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
     // saveProject (objeto da mutation) muda de identidade a cada chamada —
     // inclui-lo aqui faz o efeito reagendar o salvamento sem parar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, rows, clientName, colecao, pricingConfig, revendaConfig, currentProjectId])
+  }, [result, rows, clientName, colecao, pricingConfig, revendaConfig, atacadoPrecos, currentProjectId])
 
   const handleFile = useCallback(async (file: File) => {
     setLoading(true); setError(null)
@@ -158,7 +165,7 @@ useEffect(() => {
       const imported = await importExcel(file)
       setResult(imported); setRows(imported.rows)
       setClientName(imported.clientName); setColecao(imported.colecao)
-      setCurrentProjectId(null); setPricingConfig(null); setRevendaConfig(null); setPricingKey(k => k + 1)
+      setCurrentProjectId(null); setPricingConfig(null); setRevendaConfig(null); setAtacadoPrecos([]); setPricingKey(k => k + 1)
       setTab('dados')
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
@@ -184,7 +191,7 @@ useEffect(() => {
 
   const handleReset = () => {
     setResult(null); setRows([]); setError(null); setClientName(''); setColecao('')
-    setCurrentProjectId(null); setPricingConfig(null); setRevendaConfig(null); setPricingKey(k => k + 1)
+    setCurrentProjectId(null); setPricingConfig(null); setRevendaConfig(null); setAtacadoPrecos([]); setPricingKey(k => k + 1)
     localStorage.removeItem(STORAGE_KEY)
   }
 

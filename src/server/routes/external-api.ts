@@ -56,3 +56,28 @@ externalApiRouter.get("/api/external/projetos/:id/grade", requireApiKey, async (
   }
   res.json({ grade: gradeFromRows(rows), clientName: p.clientName, colecao: p.colecao });
 });
+
+// Preço unitário (atacado) por modelo, já calculado aqui na aba Precificação —
+// o ERP não reimplementa a fórmula (tecido, mão de obra, outros custos, nº de
+// operações, ajuste manual por código...), só lê o resultado já aprovado.
+// Vem vazio se ninguém nunca abriu a aba Precificação desse projeto.
+externalApiRouter.get("/api/external/projetos/:id/precos", requireApiKey, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "id inválido." });
+    return;
+  }
+  const [p] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+  if (!p) {
+    res.status(404).json({ error: "Projeto não encontrado." });
+    return;
+  }
+  let precos: Array<{ cod: string; tipo: string; precoAtacado: number; totalPecas: number }> = [];
+  try {
+    const parsed = p.pricingJson ? JSON.parse(p.pricingJson) : null;
+    precos = parsed?.precos ?? [];
+  } catch {
+    precos = [];
+  }
+  res.json({ precos: precos.map((r) => ({ modelo: r.cod, precoUnitario: r.precoAtacado })) });
+});
