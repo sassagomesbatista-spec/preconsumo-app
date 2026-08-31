@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Download, RefreshCw, Table2, BarChart3, Sigma, Tag, ShoppingCart, AlertCircle, CheckCircle2, History, LogOut } from 'lucide-react'
+import { Download, RefreshCw, Table2, BarChart3, Sigma, Tag, ShoppingCart, AlertCircle, CheckCircle2, History, LogOut, Link2 } from 'lucide-react'
 import UploadZone from './components/UploadZone'
 import DataTable from './components/DataTable'
 import AnalysisTab from './components/AnalysisTab'
@@ -74,6 +74,7 @@ export default function App() {
   const [clientName, setClientName] = useState(persisted?.clientName ?? '')
   const [colecao, setColecao] = useState(persisted?.colecao ?? '')
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(persisted?.currentProjectId ?? null)
+  const [erpQuoteNumber, setErpQuoteNumber] = useState<string | null>(null)
   const [pricingConfig, setPricingConfig] = useState<unknown>(persisted?.pricingConfig ?? null)
   const [revendaConfig, setRevendaConfig] = useState<unknown>(persisted?.revendaConfig ?? null)
   const [atacadoPrecos, setAtacadoPrecos] = useState<AtacadoPreco[]>([])
@@ -97,6 +98,7 @@ export default function App() {
       setClientName(p.clientName)
       setColecao(p.colecao)
       setCurrentProjectId(p.id)
+      setErpQuoteNumber((p as any).erpQuoteNumber ?? null)
       setPricingConfig(pricing)
       setRevendaConfig(revenda)
       setPricingKey(k => k + 1)
@@ -107,6 +109,15 @@ export default function App() {
       setLoading(false)
     }
   }, [loadProject])
+
+  // Link direto do ERP ("Ver projeto no Préconsumo") — ?project=123 na URL abre
+  // esse projeto sozinho, sem precisar procurar no Histórico.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const projectId = params.get('project')
+    if (projectId) handleOpenHistoryProject(Number(projectId))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
 useEffect(() => {
     if (!result) { localStorage.removeItem(STORAGE_KEY); return }
@@ -303,6 +314,13 @@ useEffect(() => {
                   Tecidos únicos: <strong style={{ color: C.pink }}>{new Set(rows.map(r => r.tecido)).size}</strong>
                 </span>
               </div>
+              <div className="ml-auto">
+                <ErpLinkWidget
+                  projectId={currentProjectId}
+                  linkedNumber={erpQuoteNumber}
+                  onLinked={(number) => setErpQuoteNumber(number)}
+                />
+              </div>
             </div>
 
             {/* Tabs */}
@@ -330,6 +348,72 @@ useEffect(() => {
           </>
         )}
       </main>
+    </div>
+  )
+}
+
+// Busca e vincula um pedido do ERP a este projeto — nasce aqui (não digita nome
+// à mão do lado do ERP): busca por número/cliente, seleciona, trava.
+function ErpLinkWidget({ projectId, linkedNumber, onLinked }: {
+  projectId: number | null
+  linkedNumber: string | null
+  onLinked: (number: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const searchQuery = trpc.erpBridge.searchPedidos.useQuery({ search }, { enabled: open && search.length >= 2 })
+  const linkPedido = trpc.erpBridge.linkPedido.useMutation({
+    onSuccess: (_r, vars) => { onLinked(vars.quoteNumber); setOpen(false) },
+  })
+
+  if (linkedNumber) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg" style={{ background: C.purpleBg, color: C.purple }}>
+        <Link2 size={12} /> Pedido {linkedNumber}
+      </span>
+    )
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        disabled={!projectId}
+        title={!projectId ? 'Aguardando salvar o projeto...' : undefined}
+        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+        style={{ border: `1px solid ${C.border}`, color: C.muted, background: 'transparent' }}
+      >
+        <Link2 size={12} /> Vincular pedido do ERP
+      </button>
+    )
+  }
+
+  return (
+    <div className="relative">
+      <input
+        autoFocus
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Buscar pedido ou cliente..."
+        className="text-xs px-3 py-1.5 rounded-lg focus:outline-none"
+        style={{ background: C.surface2, border: `1px solid ${C.border}`, color: C.text, width: 220 }}
+      />
+      {searchQuery.data && searchQuery.data.length > 0 && (
+        <div className="absolute right-0 mt-1 rounded-lg overflow-hidden z-10" style={{ background: C.surface2, border: `1px solid ${C.border}`, width: 260 }}>
+          {searchQuery.data.map(p => (
+            <button
+              key={p.id}
+              onMouseDown={() => projectId && linkPedido.mutate({ projectId, quoteId: p.id, quoteNumber: p.number })}
+              className="block w-full text-left px-3 py-2 text-xs hover:opacity-100"
+              style={{ color: C.text, opacity: 0.85 }}
+            >
+              <div className="font-semibold">{p.number}</div>
+              <div style={{ color: C.muted }}>{p.clientName}</div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

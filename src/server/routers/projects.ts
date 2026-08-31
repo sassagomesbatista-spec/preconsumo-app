@@ -13,6 +13,7 @@ export const projectsRouter = router({
         id: projects.id,
         clientName: projects.clientName,
         colecao: projects.colecao,
+        erpQuoteNumber: projects.erpQuoteNumber,
         createdAt: projects.createdAt,
         updatedAt: projects.updatedAt,
       })

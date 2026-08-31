@@ -40,9 +40,13 @@ export async function runAutoMigrations() {
         updatedAt TIMESTAMP DEFAULT NOW() ON UPDATE NOW()
       )`,
     ];
-    for (const sql of migrations) {
+    const columnMigrations = [
+      `ALTER TABLE projects ADD COLUMN erpQuoteId INT`,
+      `ALTER TABLE projects ADD COLUMN erpQuoteNumber VARCHAR(20)`,
+    ];
+    for (const sql of [...migrations, ...columnMigrations]) {
       try { await conn.execute(sql); } catch (e: any) {
-        if (!e.message?.includes("already exists")) throw e;
+        if (!e.message?.includes("already exists") && !e.message?.includes("Duplicate column")) throw e;
       }
     }
   } finally {

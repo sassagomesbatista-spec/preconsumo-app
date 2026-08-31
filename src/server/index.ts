@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers/_app.js";
 import { createContext } from "./trpc.js";
+import { externalApiRouter } from "./routes/external-api.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3001);
@@ -29,6 +30,8 @@ app.use(
   "/trpc",
   createExpressMiddleware({ router: appRouter, createContext })
 );
+
+app.use(externalApiRouter);
 
 // Serve frontend em produção
 if (process.env.NODE_ENV === "production") {

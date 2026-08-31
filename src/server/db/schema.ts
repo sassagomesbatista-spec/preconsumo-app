@@ -17,6 +17,10 @@ export const projects = mysqlTable("projects", {
   colecao: varchar("colecao", { length: 255 }).notNull().default(""),
   dataJson: longtext("dataJson").notNull(),
   pricingJson: longtext("pricingJson"),
+  // Vínculo com o pedido do ERP (erp-comissao) — buscado e travado na criação,
+  // nunca digitado à mão. Ver routers/erpBridge.ts.
+  erpQuoteId: int("erpQuoteId"),
+  erpQuoteNumber: varchar("erpQuoteNumber", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
