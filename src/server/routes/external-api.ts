@@ -73,11 +73,14 @@ externalApiRouter.get("/api/external/projetos/:id/precos", requireApiKey, async 
     return;
   }
   let precos: Array<{ cod: string; tipo: string; precoAtacado: number; totalPecas: number }> = [];
+  let debug = "nunca salvou pricingJson nenhum (aba Precificação nunca chegou a persistir)";
   try {
     const parsed = p.pricingJson ? JSON.parse(p.pricingJson) : null;
     precos = parsed?.precos ?? [];
+    if (p.pricingJson && parsed && !("precos" in parsed)) debug = "pricingJson salvo é de antes dessa funcionalidade existir (sem a chave 'precos') — reabra a aba Precificação uma vez pra atualizar.";
+    else if (p.pricingJson) debug = `pricingJson salvo, mas 'precos' veio com ${precos.length} item(ns)`;
   } catch {
-    precos = [];
+    debug = "pricingJson salvo não é um JSON válido";
   }
-  res.json({ precos: precos.map((r) => ({ modelo: r.cod, precoUnitario: r.precoAtacado })) });
+  res.json({ precos: precos.map((r) => ({ modelo: r.cod, precoUnitario: r.precoAtacado })), debug });
 });

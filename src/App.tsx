@@ -37,8 +37,10 @@ interface PersistedState {
   colecao: string
   tab: Tab
   currentProjectId?: number | null
+  erpQuoteNumber?: string | null
   pricingConfig?: unknown
   revendaConfig?: unknown
+  atacadoPrecos?: AtacadoPreco[]
 }
 
 function loadPersisted(): PersistedState | null {
@@ -78,10 +80,10 @@ export default function App() {
   const [clientName, setClientName] = useState(persisted?.clientName ?? '')
   const [colecao, setColecao] = useState(persisted?.colecao ?? '')
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(persisted?.currentProjectId ?? null)
-  const [erpQuoteNumber, setErpQuoteNumber] = useState<string | null>(null)
+  const [erpQuoteNumber, setErpQuoteNumber] = useState<string | null>(persisted?.erpQuoteNumber ?? null)
   const [pricingConfig, setPricingConfig] = useState<unknown>(persisted?.pricingConfig ?? null)
   const [revendaConfig, setRevendaConfig] = useState<unknown>(persisted?.revendaConfig ?? null)
-  const [atacadoPrecos, setAtacadoPrecos] = useState<AtacadoPreco[]>([])
+  const [atacadoPrecos, setAtacadoPrecos] = useState<AtacadoPreco[]>(persisted?.atacadoPrecos ?? [])
   const [pricingKey, setPricingKey] = useState(0)
 
   const me = trpc.auth.me.useQuery()
@@ -128,10 +130,10 @@ useEffect(() => {
     if (!result) { localStorage.removeItem(STORAGE_KEY); return }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        result: { ...result, rows }, clientName, colecao, tab, currentProjectId, pricingConfig, revendaConfig,
+        result: { ...result, rows }, clientName, colecao, tab, currentProjectId, erpQuoteNumber, pricingConfig, revendaConfig, atacadoPrecos,
       }))
     } catch { /* quota excedida, ignora */ }
-  }, [result, rows, clientName, colecao, tab, currentProjectId, pricingConfig, revendaConfig, atacadoPrecos])
+  }, [result, rows, clientName, colecao, tab, currentProjectId, erpQuoteNumber, pricingConfig, revendaConfig, atacadoPrecos])
 
   // Autosave na nuvem (histórico compartilhado) — debounced
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
