@@ -139,10 +139,12 @@ useEffect(() => {
   useEffect(() => {
     if (!result) return
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      // Evita disparar um segundo "criar projeto" (id ainda nulo) enquanto o
-      // primeiro salvamento da importação ainda não voltou do servidor.
-      if (savingRef.current) return
+    const attempt = () => {
+      // Se já tem um salvamento em andamento (ex: o da importação ainda não
+      // voltou do servidor), NÃO descarta esse salvamento — só espera um
+      // pouco e tenta de novo, senão mudanças que caem nessa janela (como o
+      // preço calculado na aba Precificação) somem sem nunca serem salvas.
+      if (savingRef.current) { saveTimer.current = setTimeout(attempt, 300); return }
       savingRef.current = true
       saveProject.mutate({
         id: currentProjectId ?? undefined,
@@ -152,7 +154,8 @@ useEffect(() => {
           ? JSON.stringify({ pricing: pricingConfig, revenda: revendaConfig, precos: atacadoPrecos })
           : undefined,
       }, { onSettled: () => { savingRef.current = false } })
-    }, 1500)
+    }
+    saveTimer.current = setTimeout(attempt, 1500)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
     // saveProject (objeto da mutation) muda de identidade a cada chamada —
     // inclui-lo aqui faz o efeito reagendar o salvamento sem parar.
