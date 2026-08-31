@@ -399,9 +399,22 @@ function ErpLinkWidget({ projectId, linkedNumber, onLinked }: {
         className="text-xs px-3 py-1.5 rounded-lg focus:outline-none"
         style={{ background: C.surface2, border: `1px solid ${C.border}`, color: C.text, width: 220 }}
       />
-      {searchQuery.data && searchQuery.data.length > 0 && (
+      {search.length >= 2 && (
         <div className="absolute right-0 mt-1 rounded-lg overflow-hidden z-10" style={{ background: C.surface2, border: `1px solid ${C.border}`, width: 260 }}>
-          {searchQuery.data.map(p => (
+          {searchQuery.isFetching && (
+            <div className="px-3 py-2 text-xs" style={{ color: C.muted }}>Buscando...</div>
+          )}
+          {searchQuery.error && (
+            <div className="px-3 py-2 text-xs" style={{ color: '#F87171' }}>
+              Erro: {(searchQuery.error as any)?.message ?? 'falha ao buscar no ERP.'}
+            </div>
+          )}
+          {!searchQuery.isFetching && !searchQuery.error && searchQuery.data?.length === 0 && (
+            <div className="px-3 py-2 text-xs" style={{ color: C.muted }}>
+              Nenhum pedido aprovado encontrado com esse número/nome. Só aparecem pedidos raiz (sem sufixo -01, -02...) já aprovados.
+            </div>
+          )}
+          {searchQuery.data && searchQuery.data.length > 0 && searchQuery.data.map(p => (
             <button
               key={p.id}
               onMouseDown={() => projectId && linkPedido.mutate({ projectId, quoteId: p.id, quoteNumber: p.number })}
