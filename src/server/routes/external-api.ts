@@ -64,6 +64,11 @@ externalApiRouter.get("/api/external/projetos/:id/grade", requireApiKey, async (
 // Preço unitário (atacado) por modelo, já calculado aqui na aba Precificação —
 // o ERP não reimplementa a fórmula (tecido, mão de obra, outros custos, nº de
 // operações, ajuste manual por código...), só lê o resultado já aprovado.
+// Vem também qtdCompra/selecionado (aba Revenda) quando existir — é a
+// quantidade NEGOCIADA com esse comprador específico, que pode ser menor que
+// o total do corte (ex: pedido parcial/proposta), e o modelo pode ter sido
+// desmarcado da proposta inteiramente. Sem isso, o ERP calcularia em cima do
+// corte da coleção toda, não da compra real desse cliente.
 // Vem vazio se ninguém nunca abriu a aba Precificação desse projeto.
 externalApiRouter.get("/api/external/projetos/:id/precos", requireApiKey, async (req, res) => {
   const id = Number(req.params.id);
@@ -77,14 +82,26 @@ externalApiRouter.get("/api/external/projetos/:id/precos", requireApiKey, async 
     return;
   }
   let precos: Array<{ cod: string; tipo: string; precoAtacado: number; totalPecas: number }> = [];
+  let qtdCompra: Record<string, number> = {};
+  let selecionados: Record<string, boolean> = {};
   let debug = "nunca salvou pricingJson nenhum (aba Precificação nunca chegou a persistir)";
   try {
     const parsed = p.pricingJson ? JSON.parse(p.pricingJson) : null;
     precos = parsed?.precos ?? [];
+    qtdCompra = parsed?.revenda?.qtdCompra ?? {};
+    selecionados = parsed?.revenda?.selecionados ?? {};
     if (p.pricingJson && parsed && !("precos" in parsed)) debug = "pricingJson salvo é de antes dessa funcionalidade existir (sem a chave 'precos') — reabra a aba Precificação uma vez pra atualizar.";
     else if (p.pricingJson) debug = `pricingJson salvo, mas 'precos' veio com ${precos.length} item(ns)`;
   } catch {
     debug = "pricingJson salvo não é um JSON válido";
   }
-  res.json({ precos: precos.map((r) => ({ modelo: r.cod, precoUnitario: r.precoAtacado })), debug });
+  res.json({
+    precos: precos.map((r) => ({
+      modelo: r.cod,
+      precoUnitario: r.precoAtacado,
+      qtdCompra: qtdCompra[r.cod] ?? null, // null = usa a quantidade da grade (não tem proposta de revenda com número próprio pra esse modelo)
+      selecionado: selecionados[r.cod] ?? true, // desmarcado na Revenda = fora da proposta desse comprador
+    })),
+    debug,
+  });
 });
