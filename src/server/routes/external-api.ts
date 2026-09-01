@@ -20,19 +20,23 @@ function requireApiKey(req: any, res: any, next: any) {
   next();
 }
 
-// Reduz as linhas de tecido pra uma grade de produção (uma por modelo+variante+
-// tamanho). IMPORTANTE: a peça acabada é identificada por "Variante" (o
-// colorway/SKU da peça — é o mesmo campo que a aba Precificação usa pra contar
-// peça, "por variante (cor) do produto"), NÃO por "Cor" — esse último é a cor
-// de cada TECIDO usado (corpo, forro, recorte...), e uma peça só pode ter mais
-// de um tecido/cor pro mesmo colorway. Agrupar por "Cor" contava a mesma peça
-// uma vez por tecido que ela usa — inflava a grade e o valor do contrato.
+// Reduz as linhas de tecido pra uma grade de produção (uma por modelo+variante).
+// IMPORTANTE: a peça acabada é identificada por "Variante" (o colorway/SKU da
+// peça — é o mesmo campo que a aba Precificação usa pra contar peça, "por
+// variante (cor) do produto"), NÃO por "Cor" — esse último é a cor de cada
+// TECIDO usado (corpo, forro, recorte...), e uma peça só pode ter mais de um
+// tecido/cor pro mesmo colorway. Agrupar por "Cor" contava a mesma peça uma vez
+// por tecido que ela usa — inflava a grade e o valor do contrato.
+// "Tipo de Variante" NÃO é tamanho (P/M/G) — é outra classificação do tecido
+// (ex: principal/secundário), sem relação com grade de tamanho. Essa planilha
+// não tem uma coluna de tamanho de verdade, então todo mundo sai "Único" — se
+// precisar de tamanho por peça, edita a grade direto no ERP depois de puxar.
 function gradeFromRows(rows: FabricRow[]) {
   const seen = new Map<string, { modelo: string; cor: string; tamanho: string; quantidade: number }>();
   for (const r of rows) {
     const modelo = String(r.codigo ?? "").trim();
     const cor = String(r.variante ?? r.cor ?? "").trim();
-    const tamanho = String(r.tipoVariante ?? "").trim() || "Único";
+    const tamanho = "Único";
     const quantidade = Number(r.qtadeACortar) || 0;
     if (!modelo || !cor || quantidade <= 0) continue;
     const key = `${modelo}|${cor}|${tamanho}`;
