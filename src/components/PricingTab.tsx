@@ -19,6 +19,18 @@ const C = {
 interface BaseCoef  { facil:number; medio:number; dificil:number }
 interface FabricCost{ preco:number; unidade:'kg'|'metro'; gramatura:number }
 interface CustoItem { id:string; nome:string; qtd:number; preco:number }
+// Tabela de preços "reutilizável" por modelista/pilotista: guarda só a parte
+// que é específica de quem corta/faz a peça (custo de corte, custo/minuto,
+// % de despesas e o coeficiente Fácil/Médio/Difícil por tipo de peça — que é
+// o que define quanto tempo a sequência operacional leva conforme a peça é
+// mais simples ou mais trabalhosa). NÃO guarda preço de tecido nem Nº de
+// Operações, que são específicos de cada coleção/importação.
+interface PricingTemplate {
+  id:string; nome:string; updatedAt:number
+  custoCorte:number; custoMinuto:number
+  impostos:number; comissao:number; frete:number; encargos:number; lucro:number
+  base:Record<string,BaseCoef>
+}
 interface Config {
   custoCorte:number; custoMinuto:number
   impostos:number; comissao:number; frete:number; encargos:number; lucro:number
@@ -72,6 +84,23 @@ const SUGESTOES = [
 const R$  = (n:number) => n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
 const pct = (n:number) => n.toFixed(2)+'%'
 function uid(){ return Math.random().toString(36).slice(2,9) }
+
+/* ─── Tabelas de preço por modelista/pilotista (localStorage) ────── */
+const TEMPLATES_KEY='prec-tabelas-v1'
+function loadTemplates():PricingTemplate[]{
+  try{ const s=localStorage.getItem(TEMPLATES_KEY); return s?JSON.parse(s):[] }catch{ return [] }
+}
+function saveTemplatesLS(arr:PricingTemplate[]){
+  try{ localStorage.setItem(TEMPLATES_KEY,JSON.stringify(arr)) }catch{}
+}
+function templateFromCfg(id:string,nome:string,cfg:Config):PricingTemplate{
+  return{
+    id, nome, updatedAt:Date.now(),
+    custoCorte:cfg.custoCorte, custoMinuto:cfg.custoMinuto,
+    impostos:cfg.impostos, comissao:cfg.comissao, frete:cfg.frete, encargos:cfg.encargos, lucro:cfg.lucro,
+    base:cfg.base,
+  }
+}
 
 function NInput({v,set,step=0.01,color=C.text,bg=C.surface2,w='w-24'}:{
   v:number;set:(n:number)=>void;step?:number;color?:string;bg?:string;w?:string
@@ -193,6 +222,10 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   const [openSettings,setOpenSettings] = useState(false)
   const [toast,setToast] = useState<{msg:string;ok:boolean}|null>(null)
   const [selectedCod,setSelectedCod] = useState<string|null>(null)
+  const [templates,setTemplates] = useState<PricingTemplate[]>(()=>loadTemplates())
+  const [templateId,setTemplateId] = useState<string|null>(null)
+
+  useEffect(()=>{saveTemplatesLS(templates)},[templates])
 
   useEffect(()=>{localStorage.setItem('prec-v9',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
 
@@ -331,6 +364,51 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   },[allResults])
 
   const toast_=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),4000)}
+
+  /* ── Tabelas de preço distintas por modelista/pilotista ── */
+  const applyTemplate=(t:PricingTemplate)=>{
+    setCfg(p=>({...p,
+      custoCorte:t.custoCorte, custoMinuto:t.custoMinuto,
+      impostos:t.impostos, comissao:t.comissao, frete:t.frete, encargos:t.encargos, lucro:t.lucro,
+      base:{...BASE_DEFAULT,...t.base},
+    }))
+  }
+  const handleSelectTemplate=(id:string)=>{
+    if(!id){ setTemplateId(null); return }
+    const t=templates.find(x=>x.id===id)
+    if(!t) return
+    applyTemplate(t); setTemplateId(id)
+    toast_(`✓ Tabela "${t.nome}" aplicada (custo de corte, custo/minuto, despesas e coeficientes fácil/médio/difícil).`)
+  }
+  const handleNewTemplate=()=>{
+    const nome=window.prompt('Nome da nova tabela de preços (ex: nome da modelista/pilotista):')?.trim()
+    if(!nome) return
+    const t=templateFromCfg(uid(),nome,cfg)
+    setTemplates(arr=>[...arr,t])
+    setTemplateId(t.id)
+    toast_(`✓ Tabela "${nome}" criada com os valores atuais.`)
+  }
+  const handleUpdateTemplate=()=>{
+    if(!templateId) return
+    setTemplates(arr=>arr.map(t=>t.id===templateId?templateFromCfg(t.id,t.nome,cfg):t))
+    toast_('✓ Tabela atualizada com os valores atuais.')
+  }
+  const handleRenameTemplate=()=>{
+    if(!templateId) return
+    const atual=templates.find(x=>x.id===templateId)
+    if(!atual) return
+    const nome=window.prompt('Novo nome da tabela:',atual.nome)?.trim()
+    if(!nome) return
+    setTemplates(arr=>arr.map(x=>x.id===templateId?{...x,nome}:x))
+  }
+  const handleDeleteTemplate=()=>{
+    if(!templateId) return
+    const atual=templates.find(x=>x.id===templateId)
+    if(!atual) return
+    if(!window.confirm(`Excluir a tabela "${atual.nome}"? Os valores continuam aplicados aqui, só some da lista.`)) return
+    setTemplates(arr=>arr.filter(x=>x.id!==templateId))
+    setTemplateId(null)
+  }
 
   /* ── Importar/aplicar dados de PLM (preços de tecido e outros custos) ── */
   const applyPlmData=(plm:PlmData)=>{
@@ -754,6 +832,44 @@ ${m.ocItens.length>0?`<div class="section">
           {openSettings?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Configurações
         </button>
         {toast&&<p className="text-xs w-full" style={{color:toast.ok?C.teal:C.pink}}>{toast.msg}</p>}
+      </div>
+
+      {/* ── Tabela de preços por modelista/pilotista ── */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl px-4 py-3"
+        style={{background:C.surface2,border:`1px solid ${C.border}`}}>
+        <span className="text-xs uppercase tracking-wide" style={{color:C.muted}}>Tabela de Preços</span>
+        <select value={templateId??''} onChange={e=>handleSelectTemplate(e.target.value)}
+          className="rounded-lg px-3 py-1.5 text-sm focus:outline-none cursor-pointer"
+          style={{background:C.bg,border:`1px solid ${C.border}`,color:C.text}}>
+          <option value="">— usar valores atuais (sem tabela salva) —</option>
+          {templates.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
+        </select>
+        <button onClick={handleNewTemplate}
+          className="text-xs px-3 py-1.5 rounded-lg font-medium"
+          style={{color:C.teal,border:`1px solid ${C.teal}`,background:C.tealBg}}>
+          + Nova tabela
+        </button>
+        {templateId&&<>
+          <button onClick={handleUpdateTemplate}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium"
+            style={{color:C.purpleLt,border:`1px solid ${C.purple}`,background:C.purpleBg}}>
+            💾 Salvar alterações nesta tabela
+          </button>
+          <button onClick={handleRenameTemplate}
+            className="text-xs px-3 py-1.5 rounded-lg" style={{color:C.muted,border:`1px solid ${C.border}`}}>
+            Renomear
+          </button>
+          <button onClick={handleDeleteTemplate}
+            className="text-xs px-3 py-1.5 rounded-lg" style={{color:C.pink,border:`1px solid ${C.pink}`,background:C.pinkBg}}>
+            Excluir
+          </button>
+        </>}
+        <span className="text-xs w-full" style={{color:C.muted}}>
+          Salva o Custo de Corte, Custo/Minuto, as % de despesas e o coeficiente Fácil/Médio/Difícil de
+          cada tipo de peça (tempo de corte + sequência operacional) como uma tabela nomeada — dá pra ter
+          uma tabela por modelista/pilotista e trocar entre elas em qualquer coleção. Preço de tecido e
+          Nº de Operações continuam sendo específicos de cada coleção importada.
+        </span>
       </div>
 
       {/* ── Configurações (colapsível) ── */}
