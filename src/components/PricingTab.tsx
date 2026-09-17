@@ -286,9 +286,15 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
       const doPlm=plmData?.consumoPorCodigo?.[cod]?.[r.tecido]
       fabricsMap.set(r.tecido,doPlm??r.consumo)
     })
-    const tecidoItens=[...fabricsMap.entries()].map(([t,c])=>({
-      tecido:t, consumo:c, preco:precoPorKg[t]??0, total:c*(precoPorKg[t]??0)
-    }))
+    const tecidoItens=[...fabricsMap.entries()].map(([t,c])=>{
+      const tc=cfg.tecidos[t]
+      const preco=tc?.preco??0
+      // Multiplica sempre na mesma unidade em que o consumo foi informado
+      // (Kg ou Metro) — precoPorKg é só um preço equivalente pra comparação
+      // visual, nunca deve ser usado aqui, senão um tecido cotado em metro
+      // teria seu consumo (em metro) multiplicado como se fosse Kg.
+      return{tecido:t, consumo:c, preco, unidade:tc?.unidade??'kg', total:c*preco}
+    })
     const custoTecido=tecidoItens.reduce((s,i)=>s+i.total,0)
 
     const ocItensGlobais=cfg.outrosCustosGlobais??[]
@@ -451,7 +457,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   <div class="section-title">Matéria Prima — Tecidos</div>
   ${m.tecidoItens.map(i=>`
   <div class="row sub">
-    <span>${i.tecido}<span class="note">${i.consumo.toFixed(3)} kg × ${R$(i.preco)}/kg</span></span>
+    <span>${i.tecido}<span class="note">${i.consumo.toFixed(3)} ${i.unidade==='metro'?'m':'kg'} × ${R$(i.preco)}/${i.unidade==='metro'?'m':'kg'}</span></span>
     <span>${R$(i.total)}</span>
   </div>`).join('')}
   <div class="row subtotal"><span>Subtotal Tecidos</span><span>${R$(m.custoTecido)}</span></div>
@@ -943,7 +949,7 @@ ${m.ocItens.length>0?`<div class="section">
                   </div>
                   {m.tecidoItens.map(i=>(
                     <Row key={i.tecido} label={i.tecido}
-                      sub={`${i.consumo.toFixed(3)} kg × ${R$(i.preco)}/kg`}
+                      sub={`${i.consumo.toFixed(3)} ${i.unidade==='metro'?'m':'kg'} × ${R$(i.preco)}/${i.unidade==='metro'?'m':'kg'}`}
                       value={i.total>0?R$(i.total):'sem preço cadastrado'}
                       accent={i.total>0?C.purpleLt:C.muted}/>
                   ))}
