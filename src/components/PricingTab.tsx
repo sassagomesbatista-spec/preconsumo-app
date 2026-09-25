@@ -147,7 +147,9 @@ function Row({label,value,sub,bold,accent}:{label:string;value:string;sub?:strin
 }
 
 /* ─── Componente principal ────────────────────────────────── */
-export interface AtacadoPreco { cod:string; tipo:string; precoAtacado:number; totalPecas:number }
+// custoTotal: custo total de produção da REF — usado pela aba TikTok Shop.
+// Opcional porque projetos salvos antes dela não têm esse campo.
+export interface AtacadoPreco { cod:string; tipo:string; precoAtacado:number; totalPecas:number; custoTotal?:number }
 
 interface Props {
   rows:FabricRow[]; plmData?:PlmData; importId?:string
@@ -332,7 +334,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   ,[uniqCodigos,cfg,precoPorKg,totalDesp])
 
   useEffect(()=>{
-    onResultsChange?.(allResults.map(r=>({cod:r.cod,tipo:r.tipo,precoAtacado:r.precoReal,totalPecas:r.totalPecas})))
+    onResultsChange?.(allResults.map(r=>({cod:r.cod,tipo:r.tipo,precoAtacado:r.precoReal,totalPecas:r.totalPecas,custoTotal:r.custoTotal})))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[allResults])
 

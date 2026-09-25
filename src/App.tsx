@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Download, RefreshCw, Table2, BarChart3, Sigma, Tag, ShoppingCart, AlertCircle, CheckCircle2, History, LogOut, Link2 } from 'lucide-react'
+import { Download, RefreshCw, Table2, BarChart3, Sigma, Tag, ShoppingCart, AlertCircle, CheckCircle2, History, LogOut, Link2, Store, ArrowLeft } from 'lucide-react'
 import UploadZone from './components/UploadZone'
 import DataTable from './components/DataTable'
 import AnalysisTab from './components/AnalysisTab'
@@ -8,12 +8,13 @@ import PricingTab from './components/PricingTab'
 import type { AtacadoPreco } from './components/PricingTab'
 import ResaleTab from './components/ResaleTab'
 import HistoryTab from './components/HistoryTab'
+import TikTokTab from './components/TikTokTab'
 import { importExcel } from './utils/excelImport'
 import { exportExcel } from './utils/excelExport'
 import { trpc } from './lib/trpc'
 import type { FabricRow, ImportResult } from './types'
 
-type Tab = 'dados' | 'analise' | 'totais' | 'precificacao' | 'revenda' | 'historico'
+type Tab = 'dados' | 'analise' | 'totais' | 'precificacao' | 'revenda' | 'tiktok' | 'historico'
 
 const C = {
   bg:       '#0A0C14',
@@ -85,6 +86,9 @@ export default function App() {
   const [revendaConfig, setRevendaConfig] = useState<unknown>(persisted?.revendaConfig ?? null)
   const [atacadoPrecos, setAtacadoPrecos] = useState<AtacadoPreco[]>(persisted?.atacadoPrecos ?? [])
   const [pricingKey, setPricingKey] = useState(0)
+  // Aba TikTok Shop aberta direto da tela inicial (sem planilha importada) —
+  // os produtos dela são da marca própria e não dependem de um projeto.
+  const [tiktokSemProjeto, setTiktokSemProjeto] = useState(false)
 
   const me = trpc.auth.me.useQuery()
   const isAdmin = me.data?.role === 'admin'
@@ -206,6 +210,7 @@ useEffect(() => {
     { key: 'totais',       label: 'Totalizações',   icon: <Sigma size={14} /> },
     { key: 'precificacao', label: 'Precificação', icon: <Tag size={14} /> },
     { key: 'revenda',      label: 'Revenda',        icon: <ShoppingCart size={14} /> },
+    { key: 'tiktok',       label: 'TikTok Shop',    icon: <Store size={14} /> },
     { key: 'historico',    label: 'Histórico',      icon: <History size={14} /> },
   ]
 
@@ -265,7 +270,16 @@ useEffect(() => {
       </header>
 
       <main className="flex-1 p-6 flex flex-col gap-4 max-w-screen-2xl mx-auto w-full">
-        {!result ? (
+        {!result && tiktokSemProjeto ? (
+          <div className="flex flex-col gap-4">
+            <button onClick={() => setTiktokSemProjeto(false)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg w-fit"
+              style={{ border: `1px solid ${C.border}`, color: C.muted, background: 'transparent' }}>
+              <ArrowLeft size={12} /> Voltar
+            </button>
+            <TikTokTab refs={atacadoPrecos} />
+          </div>
+        ) : !result ? (
           <div className="flex flex-col gap-6 max-w-xl mx-auto w-full mt-14">
             <div className="flex flex-col gap-4">
               <div className="text-center mb-2">
@@ -275,6 +289,11 @@ useEffect(() => {
                 </p>
               </div>
               <UploadZone onFile={handleFile} loading={loading} />
+              <button onClick={() => setTiktokSemProjeto(true)}
+                className="flex items-center justify-center gap-2 text-sm px-4 py-2 rounded-lg transition-colors"
+                style={{ border: `1px solid ${C.border}`, color: C.muted, background: 'transparent' }}>
+                <Store size={14} /> Precificar peças da marca para o TikTok Shop
+              </button>
               {error && (
                 <div className="flex items-start gap-3 rounded-xl p-4 text-sm"
                   style={{ background: '#1F1215', border: '1px solid #7F1D1D' }}>
@@ -355,6 +374,7 @@ useEffect(() => {
               {tab === 'totais'       && <TotalsTab rows={rows} />}
               {tab === 'precificacao' && <PricingTab key={pricingKey} rows={rows} plmData={result?.plmData} importId={result?.importId} initialConfig={pricingConfig as Parameters<typeof PricingTab>[0]['initialConfig']} onConfigChange={setPricingConfig} onResultsChange={setAtacadoPrecos} />}
               {tab === 'revenda'      && <ResaleTab key={pricingKey} precos={atacadoPrecos} initialConfig={revendaConfig as Parameters<typeof ResaleTab>[0]['initialConfig']} onConfigChange={setRevendaConfig} />}
+              {tab === 'tiktok'       && <TikTokTab refs={atacadoPrecos} />}
               {tab === 'historico'    && <HistoryTab currentProjectId={currentProjectId} onOpen={handleOpenHistoryProject} canDelete={isAdmin} />}
             </div>
           </>
