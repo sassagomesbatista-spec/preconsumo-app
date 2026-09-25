@@ -3,6 +3,7 @@ import { Upload, FileText, Printer, FileSpreadsheet, ChevronDown, ChevronUp } fr
 import type { FabricRow, PlmData } from '../types'
 import { countOperationsByCode } from '../utils/pdfOperations'
 import { extractPlmData } from '../utils/excelImport'
+import { lucroLiquido } from '../utils/pricingLucro'
 
 /* ─── Paleta ──────────────────────────────────────────────── */
 const C = {
@@ -311,7 +312,10 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     const precoProp = fator>0?custoTotal/fator:0
     const markup    = custoTotal>0?precoProp/custoTotal:0
     const precoReal = cfg.precoReal[cod]??precoProp
-    const lucroReal = precoReal>0?((precoReal-custoTotal)/precoReal)*100:0
+    // Lucro Real = lucro LÍQUIDO (já tirando impostos, comissão, frete e
+    // encargos). margemBruta é o número que a ficha mostrava antes com esse
+    // nome — continua visível, mas identificado como margem bruta.
+    const {rs:lucroRealRS,pct:lucroReal,margemBruta} = lucroLiquido(precoReal,custoTotal,totalDesp-cfg.lucro)
 
     // Total de peças cortadas (soma da QTADE À CORTAR por variante, sem somar
     // de novo a cada tecido/aviamento que compõe a mesma variante — cada um
@@ -325,7 +329,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     const valorTotalCliente=totalPecas*precoReal
 
     return{tipo,dif,coef,nr,tempo,tecidoItens,ocItens,ocItensGlobais,ocItensTipo,custoTecido,custoOC,
-           custoMP,custoMOD,custoTotal,precoProp,markup,precoReal,lucroReal,totalPecas,valorTotalCliente}
+           custoMP,custoMOD,custoTotal,precoProp,markup,precoReal,lucroReal,lucroRealRS,margemBruta,totalPecas,valorTotalCliente}
   }
 
   const allResults=useMemo(()=>
@@ -504,7 +508,8 @@ ${m.ocItens.length>0?`<div class="section">
   <span class="label"><small>Preço de Venda</small>VALOR FINAL</span>
   <span>${R$(m.precoReal)}</span>
 </div>
-<div class="row lucro-real"><span>Lucro Real</span><span>${pct(m.lucroReal)}</span></div>
+<div class="row lucro-real"><span>Lucro Real (líquido, após impostos, comissão, frete e encargos)</span><span>${R$(m.lucroRealRS)} &nbsp;·&nbsp; ${pct(m.lucroReal)}</span></div>
+<div class="row markup"><span>Margem bruta (preço − custo de produção)</span><span>${pct(m.margemBruta)}</span></div>
 
 <div class="footer">
   <span>Samanta Gomes Fashion Office</span>
@@ -543,7 +548,7 @@ ${m.ocItens.length>0?`<div class="section">
 <table>
   <thead><tr>
     <th>Código</th><th>Tipo</th><th>Dificuldade</th><th>Custo Tecidos</th><th>Custo Outros</th>
-    <th>Custo MOD</th><th>Custo Total</th><th>Preço Proposto</th><th>Mark-up</th><th>Preço de Venda</th><th>Lucro Real</th>
+    <th>Custo MOD</th><th>Custo Total</th><th>Preço Proposto</th><th>Mark-up</th><th>Preço de Venda</th><th>Lucro Real (líquido)</th>
     <th>Qtd. Peças</th><th>Valor Total</th>
   </tr></thead>
   <tbody>
@@ -649,7 +654,7 @@ ${m.ocItens.length>0?`<div class="section">
       {header:'Preço Proposto', key:'precoProp',  width:16},
       {header:'Mark-up',        key:'markup',     width:10},
       {header:'Preço de Venda', key:'precoReal',  width:16},
-      {header:'Lucro Real',     key:'lucroReal',  width:12},
+      {header:'Lucro Real (líquido)', key:'lucroReal', width:18},
       {header:'Qtd. Peças',     key:'totalPecas', width:12},
       {header:'Valor Total',    key:'valorTotalCliente', width:16},
     ]
@@ -1058,8 +1063,11 @@ ${m.ocItens.length>0?`<div class="section">
                         style={{background:'rgba(255,255,255,0.1)',border:`1px solid ${C.green}`,color:C.green}}/>
                     </div>
                   </div>
-                  <Row label="Lucro Real" value={pct(m.lucroReal)}
+                  <Row label="Lucro Real (líquido)" sub="após impostos, comissão, frete e encargos"
+                    value={`${R$(m.lucroRealRS)} · ${pct(m.lucroReal)}`}
                     bold accent={m.lucroReal>0?C.green:C.pink}/>
+                  <Row label="Margem bruta" sub="preço − custo de produção, antes das despesas sobre a venda"
+                    value={pct(m.margemBruta)} accent={C.muted}/>
                 </div>
               </div>
             </div>
