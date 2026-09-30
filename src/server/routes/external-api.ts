@@ -148,8 +148,8 @@ externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, asy
   // têm prioridade — é o que a usuária efetivamente ajustou lá; cai pro preço
   // inicial importado do PLM (plmData.tecidos) se a aba nunca foi aberta/salva.
   let tecidosCfg: Record<string, { preco: number; unidade: "kg" | "metro"; gramatura: number }> = {};
-  let outrosCustosPorTipo: Record<string, Array<{ nome: string; qtd: number; preco: number }>> = {};
-  let outrosCustosGlobais: Array<{ nome: string; qtd: number; preco: number }> = [];
+  let outrosCustosPorTipo: Record<string, Array<{ nome: string; qtd: number; preco: number; unidade?: string }>> = {};
+  let outrosCustosGlobais: Array<{ nome: string; qtd: number; preco: number; unidade?: string }> = [];
   try {
     const parsed = p.pricingJson ? JSON.parse(p.pricingJson) : null;
     tecidosCfg = parsed?.pricing?.tecidos ?? plmData?.tecidos ?? {};
@@ -212,7 +212,7 @@ externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, asy
     const itens = [...outrosCustosGlobais, ...(outrosCustosPorTipo[tipo] ?? [])];
     return itens
       .filter((it) => it.preco > 0)
-      .map((it) => ({ modelo, nome: it.nome, qtdPorPeca: it.qtd, precoUnitario: it.preco }));
+      .map((it) => ({ modelo, nome: it.nome, qtdPorPeca: it.qtd, precoUnitario: it.preco, unidade: it.unidade ?? null }));
   });
 
   // Mesma coisa, mas SEM colapsar por modelo — uma linha por variante (a cor
@@ -247,7 +247,7 @@ externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, asy
     }
   }
 
-  const outrosCustosPorVariante: Array<{ modelo: string; variante: string; nome: string; qtdPorPeca: number; precoUnitario: number }> = [];
+  const outrosCustosPorVariante: Array<{ modelo: string; variante: string; nome: string; qtdPorPeca: number; precoUnitario: number; unidade: string | null }> = [];
   {
     const seenVariantes = new Set<string>();
     for (const r of rows) {
@@ -261,7 +261,10 @@ externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, asy
       const itens = [...outrosCustosGlobais, ...(outrosCustosPorTipo[tipo] ?? [])];
       for (const it of itens) {
         if (it.preco <= 0) continue;
-        outrosCustosPorVariante.push({ modelo, variante, nome: it.nome, qtdPorPeca: it.qtd, precoUnitario: it.preco });
+        // "Unidade" só existe quando veio da aba Aviamentos/Outros custos do
+        // PLM com essa coluna preenchida (ex.: "Metro" pro elástico) — sem
+        // ela, o ERP assume contagem por peça (comportamento de sempre).
+        outrosCustosPorVariante.push({ modelo, variante, nome: it.nome, qtdPorPeca: it.qtd, precoUnitario: it.preco, unidade: it.unidade ?? null });
       }
     }
   }

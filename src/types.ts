@@ -33,6 +33,11 @@ export interface OutrosCustoItem {
   nome: string
   qtd: number
   preco: number
+  // Unidade do consumo desse item (ex.: "Metro" pra elástico vendido/consumido
+  // por metro, em vez de contado por peça) — vem da coluna "Unidade" das abas
+  // "Aviamentos"/"Outros custos" do PLM, quando existir. Sem ela, assume-se
+  // contagem por peça (comportamento de sempre, pra não quebrar import antigo).
+  unidade?: string
 }
 
 export interface PlmData {

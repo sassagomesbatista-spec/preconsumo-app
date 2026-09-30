@@ -47,12 +47,12 @@ export function extractPlmData(wb: XLSX.WorkBook): PlmData {
   // A planilha do PLM costuma repetir a mesma linha de aviamento/custo uma vez
   // por variante (cor) do produto — mantemos só a primeira ocorrência por nome.
   const seenNames: Record<string, Set<string>> = {}
-  const addItem = (tp: string, nome: string, qtd: number, preco: number) => {
+  const addItem = (tp: string, nome: string, qtd: number, preco: number, unidade?: string) => {
     if (!outrosCustos[tp]) outrosCustos[tp] = []
     if (!seenNames[tp]) seenNames[tp] = new Set()
     if (seenNames[tp].has(nome)) return
     seenNames[tp].add(nome)
-    if (preco > 0) outrosCustos[tp].push({ nome, qtd, preco })
+    if (preco > 0) outrosCustos[tp].push({ nome, qtd, preco, ...(unidade ? { unidade } : {}) })
   }
 
   const as = wb.Sheets['Aviamentos']
@@ -62,7 +62,11 @@ export function extractPlmData(wb: XLSX.WorkBook): PlmData {
       const nome = row['Aviamento']?.trim() || 'Aviamento'
       const qtd = parseFloat(String(row['Quantidade'] ?? '1').replace(',', '.'))
       const preco = parseFloat(String(row['Preço'] ?? '0').replace(',', '.'))
-      if (tp) addItem(tp, nome, isNaN(qtd) ? 1 : qtd, isNaN(preco) ? 0 : preco)
+      // Nem todo aviamento é contado por peça — elástico, viés etc. às vezes
+      // vêm por Metro no PLM (mesma ideia da coluna "Unidade" da aba
+      // "Tecidos"). Sem essa coluna, assume contagem por peça (padrão atual).
+      const unidade = row['Unidade']?.trim() || undefined
+      if (tp) addItem(tp, nome, isNaN(qtd) ? 1 : qtd, isNaN(preco) ? 0 : preco, unidade)
     })
   }
 
@@ -73,7 +77,8 @@ export function extractPlmData(wb: XLSX.WorkBook): PlmData {
       const nome = row['Nome']?.trim() || row['Descrição']?.trim() || 'Outro'
       const qtd = parseFloat(String(row['Quantidade'] ?? '1').replace(',', '.'))
       const preco = parseFloat(String(row['Preço'] ?? '0').replace('R$', '').replace('.', '').replace(',', '.'))
-      if (tp) addItem(tp, nome, isNaN(qtd) ? 1 : qtd, isNaN(preco) ? 0 : preco)
+      const unidade = row['Unidade']?.trim() || undefined
+      if (tp) addItem(tp, nome, isNaN(qtd) ? 1 : qtd, isNaN(preco) ? 0 : preco, unidade)
     })
   }
 

@@ -18,7 +18,7 @@ const C = {
 /* ─── Tipos ───────────────────────────────────────────────── */
 interface BaseCoef  { facil:number; medio:number; dificil:number }
 interface FabricCost{ preco:number; unidade:'kg'|'metro'; gramatura:number }
-interface CustoItem { id:string; nome:string; qtd:number; preco:number }
+interface CustoItem { id:string; nome:string; qtd:number; preco:number; unidade?:string }
 interface Config {
   custoCorte:number; custoMinuto:number
   impostos:number; comissao:number; frete:number; encargos:number; lucro:number
