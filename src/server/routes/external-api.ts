@@ -215,5 +215,56 @@ externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, asy
       .map((it) => ({ modelo, nome: it.nome, qtdPorPeca: it.qtd, precoUnitario: it.preco }));
   });
 
-  res.json({ materiais, outrosCustos });
+  // Mesma coisa, mas SEM colapsar por modelo — uma linha por variante (a cor
+  // da PEÇA, ex. colorway do cliente) e, pro tecido, também com a cor do
+  // próprio tecido. Pra quê: a coleção inteira listada aqui no Préconsumo
+  // quase nunca é o que o cliente comprou de verdade (ele pode ter levado só
+  // 2 das 6 cores desenvolvidas) — a Solicitação de Compra de Material no ERP
+  // precisa nascer por cor, batendo linha a linha com a grade REAL daquele
+  // pedido (que já reflete só as cores vendidas), pra dar pra apagar uma cor
+  // que não foi vendida sem mexer no total de outra. Por isso usa direto o
+  // Consumo de cada linha (por variante), nunca o agregado por código
+  // (consumoPorCodigo), que já vem somado entre todas as cores.
+  const materiaisPorVariante: Array<{ modelo: string; variante: string; tecido: string; corTecido: string; consumoPorPecaKg: number; precoPorKg: number }> = [];
+  {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const modelo = String(r.codigo ?? "").trim();
+      const variante = String(r.variante ?? r.cor ?? "").trim();
+      const tecido = String(r.tecido ?? "").trim();
+      if (!modelo || !variante || !tecido) continue;
+      const key = `${modelo}|${variante}|${tecido}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      materiaisPorVariante.push({
+        modelo,
+        variante,
+        tecido,
+        corTecido: String(r.cor ?? "").trim(),
+        consumoPorPecaKg: consumoEmKg(tecido, Number(r.consumo) || 0),
+        precoPorKg: precoPorKg(tecido),
+      });
+    }
+  }
+
+  const outrosCustosPorVariante: Array<{ modelo: string; variante: string; nome: string; qtdPorPeca: number; precoUnitario: number }> = [];
+  {
+    const seenVariantes = new Set<string>();
+    for (const r of rows) {
+      const modelo = String(r.codigo ?? "").trim();
+      const variante = String(r.variante ?? r.cor ?? "").trim();
+      if (!modelo || !variante) continue;
+      const key = `${modelo}|${variante}`;
+      if (seenVariantes.has(key)) continue;
+      seenVariantes.add(key);
+      const tipo = tipoPecaPorModelo.get(modelo) ?? "";
+      const itens = [...outrosCustosGlobais, ...(outrosCustosPorTipo[tipo] ?? [])];
+      for (const it of itens) {
+        if (it.preco <= 0) continue;
+        outrosCustosPorVariante.push({ modelo, variante, nome: it.nome, qtdPorPeca: it.qtd, precoUnitario: it.preco });
+      }
+    }
+  }
+
+  res.json({ materiais, outrosCustos, materiaisPorVariante, outrosCustosPorVariante });
 });
