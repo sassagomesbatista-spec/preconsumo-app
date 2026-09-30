@@ -117,6 +117,11 @@ externalApiRouter.get("/api/external/projetos/:id/precos", requireApiKey, async 
 // própria. Sempre normalizado em Kg (mesmo pra tecido precificado por metro,
 // convertido via gramatura), então o ERP só multiplica por quantidade e
 // preço, sem precisar lidar com unidade/gramatura.
+//
+// Também traz "outrosCustos" por modelo (aviamentos/embalagens/etc. da aba
+// Precificação, globais + do tipo de peça daquele modelo) — o ERP usa isso
+// pra montar a Ordem de Compra de Material completa (não só tecido), na hora
+// de gerar uma Solicitação de Matéria-Prima a partir da Ordem de Produção.
 externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -143,9 +148,13 @@ externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, asy
   // têm prioridade — é o que a usuária efetivamente ajustou lá; cai pro preço
   // inicial importado do PLM (plmData.tecidos) se a aba nunca foi aberta/salva.
   let tecidosCfg: Record<string, { preco: number; unidade: "kg" | "metro"; gramatura: number }> = {};
+  let outrosCustosPorTipo: Record<string, Array<{ nome: string; qtd: number; preco: number }>> = {};
+  let outrosCustosGlobais: Array<{ nome: string; qtd: number; preco: number }> = [];
   try {
     const parsed = p.pricingJson ? JSON.parse(p.pricingJson) : null;
     tecidosCfg = parsed?.pricing?.tecidos ?? plmData?.tecidos ?? {};
+    outrosCustosPorTipo = parsed?.pricing?.outrosCustos ?? {};
+    outrosCustosGlobais = parsed?.pricing?.outrosCustosGlobais ?? [];
   } catch {
     tecidosCfg = plmData?.tecidos ?? {};
   }
@@ -157,15 +166,28 @@ externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, asy
     return tc.gramatura > 0 ? tc.preco / (tc.gramatura / 1000) : 0;
   };
 
+  // Converte o consumo lançado (na unidade própria do tecido — Kg ou Metro)
+  // pro peso real em Kg, usando a gramatura — nunca multiplica um consumo em
+  // metro direto como se já fosse Kg (esse já foi um bug real: tecido
+  // cotado por metro saindo com o "consumo em metro" contado como Kg).
+  const consumoEmKg = (tecido: string, consumoNativo: number): number => {
+    const tc = tecidosCfg[tecido];
+    if (!tc || tc.unidade === "kg") return consumoNativo;
+    return tc.gramatura > 0 ? consumoNativo * (tc.gramatura / 1000) : 0;
+  };
+
   // Mesmo dedup da aba Precificação: um tecido só entra uma vez por modelo
   // (a primeira cor que aparece manda), preferindo o Kg confiável da aba
   // "Tecidos" do PLM (consumoPorCodigo) e caindo pro Consumo da linha só se
   // faltar — ver comentário equivalente em excelImport.ts/PricingTab.tsx.
   const byModelo = new Map<string, Map<string, number>>();
+  const tipoPecaPorModelo = new Map<string, string>();
   for (const r of rows) {
     const modelo = String(r.codigo ?? "").trim();
     const tecido = String(r.tecido ?? "").trim();
-    if (!modelo || !tecido) continue;
+    if (!modelo) continue;
+    if (!tipoPecaPorModelo.has(modelo)) tipoPecaPorModelo.set(modelo, String(r.tipoPeca ?? "").trim());
+    if (!tecido) continue;
     if (!byModelo.has(modelo)) byModelo.set(modelo, new Map());
     const porTecido = byModelo.get(modelo)!;
     if (porTecido.has(tecido)) continue;
@@ -174,13 +196,24 @@ externalApiRouter.get("/api/external/projetos/:id/materiais", requireApiKey, asy
   }
 
   const materiais = [...byModelo.entries()].flatMap(([modelo, tecidos]) =>
-    [...tecidos.entries()].map(([tecido, consumoPorPecaKg]) => ({
+    [...tecidos.entries()].map(([tecido, consumoNativo]) => ({
       modelo,
       tecido,
-      consumoPorPecaKg,
+      consumoPorPecaKg: consumoEmKg(tecido, consumoNativo),
       precoPorKg: precoPorKg(tecido),
     }))
   );
 
-  res.json({ materiais });
+  // Um item de "Outros Custos" por modelo = globais + os do tipo de peça
+  // daquele modelo (mesma junção que a aba Precificação faz pra calcular o
+  // custo total da peça) — nome duplicado entre global e tipo não deveria
+  // acontecer (a própria tela deduplica por nome), então soma direto.
+  const outrosCustos = [...tipoPecaPorModelo.entries()].flatMap(([modelo, tipo]) => {
+    const itens = [...outrosCustosGlobais, ...(outrosCustosPorTipo[tipo] ?? [])];
+    return itens
+      .filter((it) => it.preco > 0)
+      .map((it) => ({ modelo, nome: it.nome, qtdPorPeca: it.qtd, precoUnitario: it.preco }));
+  });
+
+  res.json({ materiais, outrosCustos });
 });
