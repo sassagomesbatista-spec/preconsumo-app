@@ -84,15 +84,33 @@ export function extractPlmData(wb: XLSX.WorkBook): PlmData {
     })
   }
 
+  // Algumas exportações do PLM trazem "Outros custos" num formato bem
+  // diferente (uma linha por produto, uma coluna por item de embalagem —
+  // "Linha/fio", "Lacre cordão" etc. — em vez de uma linha por item com
+  // colunas "Nome"/"Preço"). Sem "Nome"/"Descrição" preenchido não dá pra
+  // saber o nome real do item, então pula a linha em vez de inventar um
+  // nome genérico ("Outro") que viraria lixo visível na precificação.
   const os = wb.Sheets['Outros custos']
   if (os) {
     XLSX.utils.sheet_to_json<Record<string, string>>(os).forEach(row => {
       const tp = row['Tipo Peça']?.trim()
-      const nome = row['Nome']?.trim() || row['Descrição']?.trim() || 'Outro'
+      const nome = row['Nome']?.trim() || row['Descrição']?.trim()
       const qtd = parseFloat(String(row['Quantidade'] ?? '1').replace(',', '.'))
       const preco = parseFloat(String(row['Preço'] ?? '0').replace('R$', '').replace('.', '').replace(',', '.'))
       const unidade = row['Unidade']?.trim() || undefined
-      if (tp) addItem(tp, nome, isNaN(qtd) ? 1 : qtd, isNaN(preco) ? 0 : preco, unidade)
+      if (tp && nome) addItem(tp, nome, isNaN(qtd) ? 1 : qtd, isNaN(preco) ? 0 : preco, unidade)
+    })
+  }
+
+  // Aba "Terceiros" — serviços prestados por terceiros (corte a laser,
+  // bordado, estamparia etc.), um por linha, com custo e fornecedor.
+  const tc = wb.Sheets['Terceiros']
+  if (tc) {
+    XLSX.utils.sheet_to_json<Record<string, string>>(tc).forEach(row => {
+      const tp = row['Tipo Peça']?.trim()
+      const nome = row['Tipo']?.trim()
+      const preco = parseFloat(String(row['Custo'] ?? '0').replace(',', '.'))
+      if (tp && nome) addItem(tp, nome, 1, isNaN(preco) ? 0 : preco)
     })
   }
 
