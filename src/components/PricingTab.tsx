@@ -394,7 +394,17 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
         .map(([cod,n])=>[codigoPorChaveNormalizada.get(cod.toUpperCase()),n] as const)
         .filter((entry):entry is [string,number]=>entry[0]!==undefined)
       if(matched.length===0){
-        toast_('PDF aberto — não encontrei sequências operacionais reconhecíveis para os modelos atuais.',false)
+        const foundCods=Object.keys(counts)
+        // Diferencia "não achei tabela de sequência nenhuma no PDF" de "achei,
+        // mas é de outros modelos" — a segunda mensagem genérica fazia parecer
+        // que a leitura tinha quebrado, quando na real o PDF só documentava
+        // modelos diferentes dos que estão carregados neste projeto agora.
+        toast_(
+          foundCods.length>0
+            ? `PDF aberto — encontrei sequência operacional pra ${foundCods.join(', ')}, mas nenhum desses modelos está carregado neste projeto. Confira se é o PDF certo pra essa planilha.`
+            : 'PDF aberto — não encontrei nenhuma tabela de sequência operacional reconhecível neste arquivo.',
+          false
+        )
         return
       }
       setCfg(p=>({...p,nrOp:{...p.nrOp,...Object.fromEntries(matched)}}))
