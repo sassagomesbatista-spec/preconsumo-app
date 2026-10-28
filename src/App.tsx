@@ -201,19 +201,19 @@ useEffect(() => {
       }
 
       setRows(prev => [...prev, ...newRows])
-      // Propositalmente NÃO atualiza plmData/importId aqui: isso dispara a
-      // aplicação automática de preço de tecido na aba Precificação, que
-      // SOBRESCREVE o preço de qualquer tecido que já estava configurado
-      // (só preserva a gramatura) — exatamente o que "não mexe no que já
-      // foi precificado" promete não fazer. Tecido novo (de modelo novo)
-      // nasce com preço 0, igual a qualquer tecido nunca configurado; pra
-      // trazer os preços do PLM, ela usa "Importar PLM (Excel)" à parte,
-      // sabendo que ESSE botão sempre atualiza preço (seu propósito).
+      // Atualiza plmData/importId pra aba Precificação aplicar os preços do
+      // arquivo sozinha — mas o apply automático (ver applyPlmDataFillGaps
+      // em PricingTab.tsx) só PREENCHE tecido/custo que ainda não tem
+      // preço configurado, nunca sobrescreve o que já existe. Preço de
+      // tecido que um modelo antigo já usa (e que ela já ajustou na mão)
+      // fica intocado mesmo que o valor na planilha nova seja diferente.
       setResult(prev => prev ? {
         ...prev,
         extraColumns: [...new Set([...prev.extraColumns, ...imported.extraColumns])],
+        plmData: imported.plmData,
+        importId: imported.importId,
       } : imported)
-      setUpdateMsg(`✓ ${newCods.length} modelo(s) novo(s) adicionado(s): ${newCods.join(', ')}. Nada do que já estava neste projeto (modelos, preços, Nº de Operações) foi alterado — o preço dos tecidos usados só pelos modelos novos ainda precisa ser preenchido (ou use "Importar PLM (Excel)" pra trazer do arquivo).`)
+      setUpdateMsg(`✓ ${newCods.length} modelo(s) novo(s) adicionado(s): ${newCods.join(', ')}. Modelos, preços e Nº de Operações que já estavam neste projeto não foram alterados — o preço dos tecidos usados só pelos modelos novos foi preenchido automaticamente a partir da planilha.`)
       setTab('dados')
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }

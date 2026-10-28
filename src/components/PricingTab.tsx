@@ -360,11 +360,33 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     return true
   }
 
+  // Versão do apply automático que só PREENCHE o que ainda não existe —
+  // nunca sobrescreve preço de tecido/custo que já estava configurado.
+  // Pro primeiro import de um projeto novo (tecidos/outrosCustos vazios)
+  // isso se comporta exatamente igual ao applyPlmData normal; só muda
+  // quando já tem dado configurado — caso do botão "Atualizar modelos" do
+  // App.tsx, que precisa trazer preço dos tecidos novos sem arriscar
+  // sobrescrever o preço de um tecido que um modelo antigo já usa e que
+  // ela já ajustou manualmente.
+  const applyPlmDataFillGaps=(plm:PlmData)=>{
+    const newTecidos=Object.entries(plm.tecidos).filter(([nome])=>!cfg.tecidos[nome])
+    const newOutrosCustos=Object.entries(plm.outrosCustos).filter(([tp])=>!cfg.outrosCustos[tp])
+    if(newTecidos.length===0&&newOutrosCustos.length===0) return false
+    setCfg(p=>{
+      const nt={...p.tecidos}
+      newTecidos.forEach(([nome,info])=>{nt[nome]=info})
+      const mergedOC={...p.outrosCustos}
+      newOutrosCustos.forEach(([tp,itens])=>{mergedOC[tp]=itens.map(i=>({id:uid(),...i}))})
+      return{...p,tecidos:nt,outrosCustos:mergedOC}
+    })
+    return true
+  }
+
   // Aplica automaticamente os dados de PLM já presentes no arquivo importado na aba "Dados"
   useEffect(()=>{
     if(!importId||!plmData) return
     if(cfg.lastPlmImportId===importId) return
-    const applied=applyPlmData(plmData)
+    const applied=applyPlmDataFillGaps(plmData)
     setCfg(p=>({...p,lastPlmImportId:importId}))
     if(applied) toast_('✓ Preços de tecido e outros custos carregados automaticamente do arquivo importado.')
   // eslint-disable-next-line react-hooks/exhaustive-deps
