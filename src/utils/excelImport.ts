@@ -45,14 +45,28 @@ export function extractPlmData(wb: XLSX.WorkBook): PlmData {
   }
 
   // A planilha do PLM costuma repetir a mesma linha de aviamento/custo uma vez
-  // por variante (cor) do produto — mantemos só a primeira ocorrência por nome.
+  // por variante (cor) do produto — mantemos só a primeira ocorrência por
+  // nome. O item entra SEMPRE, mesmo sem preço preenchido ainda (igual já
+  // acontece com tecido — melhor aparecer com preço zerado, editável, do que
+  // sumir sem ela nem saber que ele existe). Se a primeira linha de um
+  // aviamento veio sem preço mas uma linha posterior (outra cor/variante)
+  // trouxer o preço, aproveita esse preço em vez de deixar zerado.
   const seenNames: Record<string, Set<string>> = {}
   const addItem = (tp: string, nome: string, qtd: number, preco: number, unidade?: string) => {
     if (!outrosCustos[tp]) outrosCustos[tp] = []
     if (!seenNames[tp]) seenNames[tp] = new Set()
-    if (seenNames[tp].has(nome)) return
+    if (seenNames[tp].has(nome)) {
+      if (preco > 0) {
+        const existing = outrosCustos[tp].find(i => i.nome === nome)
+        if (existing && !(existing.preco > 0)) {
+          existing.preco = preco
+          if (unidade) existing.unidade = unidade
+        }
+      }
+      return
+    }
     seenNames[tp].add(nome)
-    if (preco > 0) outrosCustos[tp].push({ nome, qtd, preco, ...(unidade ? { unidade } : {}) })
+    outrosCustos[tp].push({ nome, qtd, preco, ...(unidade ? { unidade } : {}) })
   }
 
   const as = wb.Sheets['Aviamentos']
