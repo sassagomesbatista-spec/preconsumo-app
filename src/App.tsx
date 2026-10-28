@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Download, RefreshCw, Table2, BarChart3, Sigma, Tag, ShoppingCart, AlertCircle, CheckCircle2, History, LogOut, Link2 } from 'lucide-react'
+import { Download, RefreshCw, FileUp, Table2, BarChart3, Sigma, Tag, ShoppingCart, AlertCircle, CheckCircle2, History, LogOut, Link2 } from 'lucide-react'
 import UploadZone from './components/UploadZone'
 import DataTable from './components/DataTable'
 import AnalysisTab from './components/AnalysisTab'
@@ -76,6 +76,8 @@ export default function App() {
   const [tab, setTab] = useState<Tab>(persisted?.tab ?? 'dados')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null)
+  const updateModelsInputRef = useRef<HTMLInputElement>(null)
   const [exporting, setExporting] = useState(false)
   const [clientName, setClientName] = useState(persisted?.clientName ?? '')
   const [colecao, setColecao] = useState(persisted?.colecao ?? '')
@@ -176,6 +178,47 @@ useEffect(() => {
     finally { setLoading(false) }
   }, [])
 
+  // "Atualizar modelos" — pra quando a planilha da cliente ganha modelos
+  // novos depois que o projeto já foi criado (e já tem precificação feita
+  // em cima dos modelos antigos). Diferente de "Novo arquivo": NUNCA troca
+  // o projeto nem mexe em nenhuma linha já existente — só adiciona as
+  // linhas de código que ainda não estavam aqui. currentProjectId/
+  // pricingConfig/etc. continuam intocados de propósito, pra isso
+  // permanecer o MESMO projeto no Histórico (autosave continua
+  // sobrescrevendo o mesmo registro), e o preço/custo/nº de operações já
+  // preenchidos pros modelos antigos não serem tocados.
+  const handleUpdateModels = useCallback(async (file: File) => {
+    setLoading(true); setError(null); setUpdateMsg(null)
+    try {
+      const imported = await importExcel(file)
+      const existingCods = new Set(rows.map(r => r.codigo))
+      const newRows = imported.rows.filter(r => !existingCods.has(r.codigo))
+      const newCods = [...new Set(newRows.map(r => r.codigo))]
+
+      if (newCods.length === 0) {
+        setUpdateMsg('Nenhum modelo novo encontrado nessa planilha — todos os códigos já estavam neste projeto.')
+        return
+      }
+
+      setRows(prev => [...prev, ...newRows])
+      // Propositalmente NÃO atualiza plmData/importId aqui: isso dispara a
+      // aplicação automática de preço de tecido na aba Precificação, que
+      // SOBRESCREVE o preço de qualquer tecido que já estava configurado
+      // (só preserva a gramatura) — exatamente o que "não mexe no que já
+      // foi precificado" promete não fazer. Tecido novo (de modelo novo)
+      // nasce com preço 0, igual a qualquer tecido nunca configurado; pra
+      // trazer os preços do PLM, ela usa "Importar PLM (Excel)" à parte,
+      // sabendo que ESSE botão sempre atualiza preço (seu propósito).
+      setResult(prev => prev ? {
+        ...prev,
+        extraColumns: [...new Set([...prev.extraColumns, ...imported.extraColumns])],
+      } : imported)
+      setUpdateMsg(`✓ ${newCods.length} modelo(s) novo(s) adicionado(s): ${newCods.join(', ')}. Nada do que já estava neste projeto (modelos, preços, Nº de Operações) foi alterado — o preço dos tecidos usados só pelos modelos novos ainda precisa ser preenchido (ou use "Importar PLM (Excel)" pra trazer do arquivo).`)
+      setTab('dados')
+    } catch (e) { setError((e as Error).message) }
+    finally { setLoading(false) }
+  }, [rows])
+
   const handleUpdateQtade = useCallback((id: string, qtade: number) => {
     setRows(prev => prev.map(r =>
       r.id === id ? { ...r, qtadeACortar: qtade, consumoTotal: Math.round(r.consumo * qtade * 1000) / 1000 } : r
@@ -238,6 +281,15 @@ useEffect(() => {
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
                 style={{ border: `1px solid ${C.border}`, color: C.muted, background: 'transparent' }}>
                 <RefreshCw size={12} /> Novo arquivo
+              </button>
+
+              <input ref={updateModelsInputRef} type="file" accept=".xlsx,.xls" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleUpdateModels(f); e.target.value = '' }} />
+              <button onClick={() => updateModelsInputRef.current?.click()} disabled={loading}
+                title="Importa uma planilha nova e adiciona só os modelos que ainda não estão neste projeto — não mexe no que já foi precificado"
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                style={{ border: `1px solid ${C.border}`, color: C.muted, background: 'transparent' }}>
+                <FileUp size={12} /> Atualizar modelos
               </button>
 
               <button onClick={handleExport} disabled={exporting}
@@ -348,6 +400,15 @@ useEffect(() => {
                 </button>
               ))}
             </div>
+
+            {updateMsg && (
+              <div className="flex items-start gap-3 rounded-xl p-3 text-sm"
+                style={{ background: '#0F1F1A', border: `1px solid ${C.teal}` }}>
+                <CheckCircle2 size={16} style={{ color: C.teal }} className="shrink-0 mt-0.5" />
+                <p className="flex-1" style={{ color: C.text }}>{updateMsg}</p>
+                <button onClick={() => setUpdateMsg(null)} className="text-xs shrink-0" style={{ color: C.muted }}>✕</button>
+              </div>
+            )}
 
             <div className="flex-1">
               {tab === 'dados'         && <DataTable rows={rows} onUpdate={handleUpdateQtade} onBulkUpdate={handleBulkUpdateQtade} />}
