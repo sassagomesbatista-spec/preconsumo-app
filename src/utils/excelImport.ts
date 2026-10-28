@@ -133,7 +133,7 @@ export function importExcel(file: File): Promise<ImportResult> {
 
           const row: FabricRow = {
             id: `row-${i}`,
-            tipoPeca: String(get('Tipo Peça') ?? ''),
+            tipoPeca: String(get('Tipo Peça') ?? '').trim(),
             colecao: String(get('Coleção') ?? ''),
             codigo: String(get('Código') ?? ''),
             tema: String(get('Tema') ?? ''),

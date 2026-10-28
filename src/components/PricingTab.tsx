@@ -260,6 +260,17 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     return !Object.keys(cfg.base).some(x=>x===up||up.includes(x)||x.includes(up))
   }
 
+  // Acha a chave de outrosCustos/dificuldade que corresponde a esse tipo de
+  // peça, tolerando maiúscula/minúscula e espaço — proteção extra pra dados
+  // que já foram importados antes de canonTipo existir, e cujo
+  // cfg.outrosCustos pode ter ficado salvo com uma grafia diferente da do
+  // tipoPeca atual dessa linha.
+  const findTipoKey=(dict:Record<string,unknown>,tipo:string):string|undefined=>{
+    if(dict[tipo]!==undefined) return tipo
+    const target=tipo.trim().toUpperCase()
+    return Object.keys(dict).find(k=>k.trim().toUpperCase()===target)
+  }
+
   const precoPorKg=useMemo(()=>{
     const r:Record<string,number>={}
     Object.entries(cfg.tecidos).forEach(([t,c])=>
@@ -272,7 +283,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   /* ── Cálculo por código ──────────────────────────── */
   const calcModel=(cod:string,crs:FabricRow[])=>{
     const tipo  = crs[0].tipoPeca
-    const dif   = cfg.dificuldade[tipo]??'MEDIO'
+    const dif   = cfg.dificuldade[findTipoKey(cfg.dificuldade,tipo)??tipo]??'MEDIO'
     const coef  = getCoef(tipo,dif)
     const nr    = cfg.nrOp[cod]??0
     const tempo = nr*coef
@@ -298,7 +309,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     const custoTecido=tecidoItens.reduce((s,i)=>s+i.total,0)
 
     const ocItensGlobais=cfg.outrosCustosGlobais??[]
-    const ocItensTipo=cfg.outrosCustos[tipo]??[]
+    const ocItensTipo=cfg.outrosCustos[findTipoKey(cfg.outrosCustos,tipo)??tipo]??[]
     const ocItens=[...ocItensGlobais,...ocItensTipo]
     const custoOC=ocItens.reduce((s,i)=>s+i.qtd*i.preco,0)
 
@@ -338,6 +349,22 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
 
   const toast_=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),4000)}
 
+  // A aba "Tecidos de variantes" (de onde vem o Tipo Peça de cada modelo) e
+  // as abas "Aviamentos"/"Outros custos" (de onde vem o Tipo Peça dos
+  // aviamentos) são preenchidas à mão, separadamente, no PLM — então o
+  // mesmo tipo de peça pode vir escrito com maiúscula/minúscula ou espaço
+  // diferente em cada uma ("Short 2 em 1" vs "SHORT 2 EM 1 "). Como
+  // cfg.outrosCustos[tipo] é uma busca exata por string, essa diferença
+  // fazia o aviamento simplesmente não aparecer pra aquele modelo, sem
+  // nenhum erro. Aqui a gente usa sempre a grafia que já aparece nas linhas
+  // do modelo (rows) como a canônica, pra garantir que bate exatamente com
+  // o que calcModel vai usar depois.
+  const canonTipo=(tp:string):string=>{
+    const target=tp.trim().toUpperCase()
+    const match=rows.find(r=>r.tipoPeca.trim().toUpperCase()===target)
+    return match?match.tipoPeca.trim():tp.trim()
+  }
+
   /* ── Importar/aplicar dados de PLM (preços de tecido e outros custos) ── */
   const applyPlmData=(plm:PlmData)=>{
     const hasData=Object.keys(plm.tecidos).length>0||Object.keys(plm.outrosCustos).length>0
@@ -353,7 +380,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
       // ficavam grudadas nos imports seguintes.
       const mergedOC={...p.outrosCustos}
       Object.entries(plm.outrosCustos).forEach(([tp,itens])=>{
-        mergedOC[tp]=itens.map(i=>({id:uid(),...i}))
+        mergedOC[canonTipo(tp)]=itens.map(i=>({id:uid(),...i}))
       })
       return{...p,tecidos:nt,outrosCustos:mergedOC}
     })
@@ -370,7 +397,9 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   // ela já ajustou manualmente.
   const applyPlmDataFillGaps=(plm:PlmData)=>{
     const newTecidos=Object.entries(plm.tecidos).filter(([nome])=>!cfg.tecidos[nome])
-    const newOutrosCustos=Object.entries(plm.outrosCustos).filter(([tp])=>!cfg.outrosCustos[tp])
+    const newOutrosCustos=Object.entries(plm.outrosCustos)
+      .map(([tp,itens])=>[canonTipo(tp),itens] as const)
+      .filter(([tp])=>!cfg.outrosCustos[tp])
     if(newTecidos.length===0&&newOutrosCustos.length===0) return false
     setCfg(p=>{
       const nt={...p.tecidos}
@@ -961,8 +990,8 @@ ${m.ocItens.length>0?`<div class="section">
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Dificuldade */}
-                  <select value={cfg.dificuldade[m.tipo]??'MEDIO'}
-                    onChange={e=>setCfg(p=>({...p,dificuldade:{...p.dificuldade,[m.tipo]:e.target.value as 'FACIL'|'MEDIO'|'DIFICIL'}}))}
+                  <select value={m.dif}
+                    onChange={e=>setCfg(p=>({...p,dificuldade:{...p.dificuldade,[findTipoKey(p.dificuldade,m.tipo)??m.tipo]:e.target.value as 'FACIL'|'MEDIO'|'DIFICIL'}}))}
                     className="rounded-lg px-3 py-2 text-sm focus:outline-none cursor-pointer"
                     style={{background:C.bg,border:`1px solid ${C.border}`,color:C.text}}>
                     <option value="FACIL">Fácil</option>
@@ -1014,7 +1043,7 @@ ${m.ocItens.length>0?`<div class="section">
                     style={{background:C.bg,color:C.muted,borderBottom:`1px solid ${C.border}`}}>
                     Outros Custos — {m.tipo}
                   </div>
-                  <OutrosCustosList items={cfg.outrosCustos[m.tipo]??[]} onChange={fn=>setOC(m.tipo,fn)}/>
+                  <OutrosCustosList items={m.ocItensTipo} onChange={fn=>setOC(findTipoKey(cfg.outrosCustos,m.tipo)??m.tipo,fn)}/>
                   <Row label="Subtotal Outros Custos" value={R$(m.custoOC)} bold accent={C.yellow}/>
                 </div>
 
