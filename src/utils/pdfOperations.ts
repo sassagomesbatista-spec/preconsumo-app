@@ -47,14 +47,20 @@ export async function countOperationsByCode(file: File): Promise<Record<string, 
     for (const line of sortedLines) {
       const refMatch = line.match(REF_RE)
       if (refMatch) {
-        currentCode = refMatch[1]
+        // Maiúsculo sempre — a ficha técnica escreve o código em caixa alta
+        // no cabeçalho ("Ref: PERF.0003") mas em caixa baixa na tabela de
+        // sequência ("Sequência: Bermuda - perf.0003"); sem normalizar, o
+        // código contado aqui nunca batia com o código do Excel importado
+        // ("PERF.0003"), e o Nº de Operações nunca era aplicado a nenhum
+        // modelo, mesmo quando a contagem em si estava certa.
+        currentCode = refMatch[1].toUpperCase()
         counting = false
         if (!(currentCode in result)) result[currentCode] = 0
         continue
       }
       const seqMatch = line.match(SEQ_CODE_RE)
       if (seqMatch) {
-        currentCode = seqMatch[2]
+        currentCode = seqMatch[2].toUpperCase()
         counting = false
         if (!(currentCode in result)) result[currentCode] = 0
         continue

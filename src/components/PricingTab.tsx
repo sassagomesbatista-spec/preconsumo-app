@@ -385,8 +385,14 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     window.open(URL.createObjectURL(file),'_blank')
     try{
       const counts=await countOperationsByCode(file)
-      const codigos=new Set(uniqCodigos.map(([cod])=>cod))
-      const matched=Object.entries(counts).filter(([cod])=>codigos.has(cod))
+      // Comparação sem diferenciar maiúsc./minúsc. — o PDF já normaliza pra
+      // maiúsculo, mas se algum dia o Excel importado tiver o código em
+      // outra caixa, ainda assim bate; grava sempre com a grafia canônica
+      // do código já cadastrado (uniqCodigos), nunca a do PDF.
+      const codigoPorChaveNormalizada=new Map(uniqCodigos.map(([cod])=>[cod.toUpperCase(),cod]))
+      const matched=Object.entries(counts)
+        .map(([cod,n])=>[codigoPorChaveNormalizada.get(cod.toUpperCase()),n] as const)
+        .filter((entry):entry is [string,number]=>entry[0]!==undefined)
       if(matched.length===0){
         toast_('PDF aberto — não encontrei sequências operacionais reconhecíveis para os modelos atuais.',false)
         return
