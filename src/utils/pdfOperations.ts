@@ -3,7 +3,11 @@ import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 GlobalWorkerOptions.workerSrc = workerSrc
 
-const REF_RE = /Ref[:\.]?\s*(\S+)/i
+// ":" ou "." depois de "Ref" é OBRIGATÓRIO (não opcional) — sem isso, a
+// expressão também casava com "Ref" no meio de qualquer palavra que o
+// contivesse ("Running Reflective" virava código "lective", "Referências"
+// virava código "erências"), poluindo o resultado com códigos inventados.
+const REF_RE = /\bRef[:\.]\s*(\S+)/i
 const SEQ_CODE_RE = /Sequ[êe]ncia:\s*(.+?)\s*-\s*(\S+)/i
 const HEADER_RE = /Opera[çc][ãa]o/i
 const MAQUINA_RE = /M[áa]quina/i
