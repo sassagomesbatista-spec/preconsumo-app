@@ -197,6 +197,9 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   // (variantes) desmarcadas, chave "cod::variante". Vazio = tudo entra.
   const [exclCod,setExclCod] = useState<Set<string>>(()=>new Set())
   const [exclVar,setExclVar] = useState<Set<string>>(()=>new Set())
+  // Cores desmarcadas para a coleção inteira (vale para todos os modelos)
+  const [exclCor,setExclCor] = useState<Set<string>>(()=>new Set())
+  const [openCores,setOpenCores] = useState(false)
   const toggleSet=(set:Set<string>,k:string)=>{const n=new Set(set);n.has(k)?n.delete(k):n.add(k);return n}
 
   useEffect(()=>{localStorage.setItem('prec-v9',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
@@ -352,11 +355,20 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   // recalculados apenas pelas cores selecionadas.
   const reportResults=useMemo(()=>
     allResults.filter(r=>!exclCod.has(r.cod)).map(r=>{
-      const vs=r.variantes.filter(v=>!exclVar.has(`${r.cod}::${v.nome}`))
+      const vs=r.variantes.filter(v=>!exclCor.has(v.nome)&&!exclVar.has(`${r.cod}::${v.nome}`))
       const totalPecas=vs.reduce((s,v)=>s+v.qtd,0)
       return{...r,variantesSel:vs,totalPecas,valorTotalCliente:totalPecas*r.precoReal}
     }).filter(r=>r.variantesSel.length>0)
-  ,[allResults,exclCod,exclVar])
+  ,[allResults,exclCod,exclVar,exclCor])
+  // Todas as cores da coleção, com total de peças e em quantos modelos aparecem
+  const coresColecao=useMemo(()=>{
+    const m=new Map<string,{qtd:number;modelos:number}>()
+    allResults.forEach(r=>r.variantes.forEach(v=>{
+      const c=m.get(v.nome)??{qtd:0,modelos:0}
+      m.set(v.nome,{qtd:c.qtd+v.qtd,modelos:c.modelos+1})
+    }))
+    return [...m.entries()].sort(([a],[b])=>a.localeCompare(b))
+  },[allResults])
   const selecaoParcial=reportResults.length!==allResults.length||
     reportResults.some(r=>r.variantesSel.length!==r.variantes.length)
 
@@ -843,8 +855,14 @@ ${m.ocItens.length>0?`<div class="section">
           style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
           <Printer size={13}/> Proposta para Cliente (PDF)
         </button>
-        <button onClick={()=>setOpenSettings(s=>!s)}
+        <button onClick={()=>setOpenCores(s=>!s)}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm ml-auto"
+          style={{color:exclCor.size?C.yellow:C.muted,border:`1px solid ${exclCor.size?C.yellow:C.border}`}}>
+          {openCores?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Cores do relatório
+          {exclCor.size>0&&` (${coresColecao.length-exclCor.size}/${coresColecao.length})`}
+        </button>
+        <button onClick={()=>setOpenSettings(s=>!s)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
           style={{color:C.muted,border:`1px solid ${C.border}`}}>
           {openSettings?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Configurações
         </button>
@@ -853,6 +871,39 @@ ${m.ocItens.length>0?`<div class="section">
         </p>}
         {toast&&<p className="text-xs w-full" style={{color:toast.ok?C.teal:C.pink}}>{toast.msg}</p>}
       </div>
+
+      {/* ── Cores do relatório (coleção inteira) ── */}
+      {openCores&&(
+        <div className="rounded-xl p-4 flex flex-col gap-3"
+          style={{background:C.surface2,border:`1px solid ${C.border}`}}>
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="text-xs uppercase tracking-wide" style={{color:C.muted}}>
+              Marque só as cores que vão no relatório — vale para todos os modelos
+            </p>
+            <button onClick={()=>setExclCor(new Set())}
+              className="text-xs underline" style={{color:C.teal}}>Marcar todas</button>
+            <button onClick={()=>setExclCor(new Set(coresColecao.map(([n])=>n)))}
+              className="text-xs underline" style={{color:C.pink}}>Desmarcar todas</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {coresColecao.map(([nome,info])=>{
+              const on=!exclCor.has(nome)
+              return(
+                <label key={nome} className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg cursor-pointer"
+                  style={{background:on?C.purpleBg:C.bg,border:`1px solid ${on?C.purple:C.border}`,
+                    color:on?C.text:C.muted}}>
+                  <input type="checkbox" checked={on} onChange={()=>setExclCor(s=>toggleSet(s,nome))}
+                    style={{accentColor:C.purple}}/>
+                  {nome}
+                  <span className="text-xs" style={{color:C.muted}}>{info.qtd} pç · {info.modelos} mod.</span>
+                </label>
+              )
+            })}
+            {coresColecao.length===0&&
+              <p className="text-xs" style={{color:C.muted}}>Importe um PLM pra ver as cores aqui.</p>}
+          </div>
+        </div>
+      )}
 
       {/* ── Configurações (colapsível) ── */}
       {openSettings&&(
@@ -1053,9 +1104,12 @@ ${m.ocItens.length>0?`<div class="section">
                 <span className="text-xs uppercase tracking-wide" style={{color:C.muted}}>Cores no relatório:</span>
                 {m.variantes.map(v=>{
                   const k=`${cod}::${v.nome}`
-                  const on=!exclVar.has(k)
+                  const off=exclCor.has(v.nome)
+                  const on=!off&&!exclVar.has(k)
                   return(
-                    <button key={v.nome} onClick={()=>setExclVar(s=>toggleSet(s,k))}
+                    <button key={v.nome} disabled={off}
+                      title={off?'Cor desmarcada para a coleção inteira (painel Cores do relatório)':''}
+                      onClick={()=>setExclVar(s=>toggleSet(s,k))}
                       className="text-xs px-2 py-1 rounded-full"
                       style={{background:on?C.purpleBg:'transparent',
                         border:`1px solid ${on?C.purple:C.border}`,
