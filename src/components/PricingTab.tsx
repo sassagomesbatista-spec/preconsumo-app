@@ -197,9 +197,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   // (variantes) desmarcadas, chave "cod::variante". Vazio = tudo entra.
   const [exclCod,setExclCod] = useState<Set<string>>(()=>new Set())
   const [exclVar,setExclVar] = useState<Set<string>>(()=>new Set())
-  // Cores desmarcadas para a coleção inteira (vale para todos os modelos)
-  const [exclCor,setExclCor] = useState<Set<string>>(()=>new Set())
-  const [openCores,setOpenCores] = useState(false)
+  const [openMontar,setOpenMontar] = useState(false)
   const toggleSet=(set:Set<string>,k:string)=>{const n=new Set(set);n.has(k)?n.delete(k):n.add(k);return n}
 
   useEffect(()=>{localStorage.setItem('prec-v9',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
@@ -355,20 +353,25 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   // recalculados apenas pelas cores selecionadas.
   const reportResults=useMemo(()=>
     allResults.filter(r=>!exclCod.has(r.cod)).map(r=>{
-      const vs=r.variantes.filter(v=>!exclCor.has(v.nome)&&!exclVar.has(`${r.cod}::${v.nome}`))
+      const vs=r.variantes.filter(v=>!exclVar.has(`${r.cod}::${v.nome}`))
       const totalPecas=vs.reduce((s,v)=>s+v.qtd,0)
       return{...r,variantesSel:vs,totalPecas,valorTotalCliente:totalPecas*r.precoReal}
     }).filter(r=>r.variantesSel.length>0)
-  ,[allResults,exclCod,exclVar,exclCor])
-  // Todas as cores da coleção, com total de peças e em quantos modelos aparecem
+  ,[allResults,exclCod,exclVar])
+  // Colunas da tabela "Montar relatório": cores da coleção, agrupando
+  // grafias iguais com maiúscula/minúscula diferente (ex. "Café torrado")
+  const normCor=(n:string)=>n.trim().toLowerCase()
   const coresColecao=useMemo(()=>{
-    const m=new Map<string,{qtd:number;modelos:number}>()
-    allResults.forEach(r=>r.variantes.forEach(v=>{
-      const c=m.get(v.nome)??{qtd:0,modelos:0}
-      m.set(v.nome,{qtd:c.qtd+v.qtd,modelos:c.modelos+1})
-    }))
-    return [...m.entries()].sort(([a],[b])=>a.localeCompare(b))
+    const m=new Map<string,string>()
+    allResults.forEach(r=>r.variantes.forEach(v=>{if(!m.has(normCor(v.nome)))m.set(normCor(v.nome),v.nome)}))
+    return [...m.entries()].map(([key,nome])=>({key,nome})).sort((a,b)=>a.nome.localeCompare(b.nome))
   },[allResults])
+  // Liga/desliga uma coluna inteira (a cor em todos os modelos)
+  const toggleCorColuna=(key:string)=>{
+    const ks=allResults.flatMap(r=>r.variantes.filter(v=>normCor(v.nome)===key).map(v=>`${r.cod}::${v.nome}`))
+    const todasOn=ks.every(k=>!exclVar.has(k))
+    setExclVar(s=>{const n=new Set(s);ks.forEach(k=>todasOn?n.add(k):n.delete(k));return n})
+  }
   const selecaoParcial=reportResults.length!==allResults.length||
     reportResults.some(r=>r.variantesSel.length!==r.variantes.length)
 
@@ -855,11 +858,10 @@ ${m.ocItens.length>0?`<div class="section">
           style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
           <Printer size={13}/> Proposta para Cliente (PDF)
         </button>
-        <button onClick={()=>setOpenCores(s=>!s)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm ml-auto"
-          style={{color:exclCor.size?C.yellow:C.muted,border:`1px solid ${exclCor.size?C.yellow:C.border}`}}>
-          {openCores?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Cores do relatório
-          {exclCor.size>0&&` (${coresColecao.length-exclCor.size}/${coresColecao.length})`}
+        <button onClick={()=>setOpenMontar(s=>!s)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ml-auto"
+          style={{background:openMontar?C.purple:C.purpleBg,border:`1px solid ${C.purple}`,color:openMontar?'#fff':C.purpleLt}}>
+          {openMontar?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Escolher modelos e cores
         </button>
         <button onClick={()=>setOpenSettings(s=>!s)}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
@@ -872,36 +874,78 @@ ${m.ocItens.length>0?`<div class="section">
         {toast&&<p className="text-xs w-full" style={{color:toast.ok?C.teal:C.pink}}>{toast.msg}</p>}
       </div>
 
-      {/* ── Cores do relatório (coleção inteira) ── */}
-      {openCores&&(
+      {/* ── Escolher modelos e cores do relatório (tabela única) ── */}
+      {openMontar&&(
         <div className="rounded-xl p-4 flex flex-col gap-3"
           style={{background:C.surface2,border:`1px solid ${C.border}`}}>
           <div className="flex items-center gap-3 flex-wrap">
-            <p className="text-xs uppercase tracking-wide" style={{color:C.muted}}>
-              Marque só as cores que vão no relatório — vale para todos os modelos
+            <p className="text-sm" style={{color:C.text}}>
+              Desmarque o que <b>não</b> vai no relatório. Clique no nome da cor para tirar/voltar a coluna inteira.
             </p>
-            <button onClick={()=>setExclCor(new Set())}
-              className="text-xs underline" style={{color:C.teal}}>Marcar todas</button>
-            <button onClick={()=>setExclCor(new Set(coresColecao.map(([n])=>n)))}
-              className="text-xs underline" style={{color:C.pink}}>Desmarcar todas</button>
+            <button onClick={()=>{setExclCod(new Set());setExclVar(new Set())}}
+              className="text-xs underline" style={{color:C.teal}}>Marcar tudo</button>
+            <button onClick={()=>{setExclCod(new Set());setExclVar(new Set(allResults.flatMap(r=>r.variantes.map(v=>`${r.cod}::${v.nome}`))))}}
+              className="text-xs underline" style={{color:C.pink}}>Desmarcar tudo</button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {coresColecao.map(([nome,info])=>{
-              const on=!exclCor.has(nome)
-              return(
-                <label key={nome} className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg cursor-pointer"
-                  style={{background:on?C.purpleBg:C.bg,border:`1px solid ${on?C.purple:C.border}`,
-                    color:on?C.text:C.muted}}>
-                  <input type="checkbox" checked={on} onChange={()=>setExclCor(s=>toggleSet(s,nome))}
-                    style={{accentColor:C.purple}}/>
-                  {nome}
-                  <span className="text-xs" style={{color:C.muted}}>{info.qtd} pç · {info.modelos} mod.</span>
-                </label>
-              )
-            })}
-            {coresColecao.length===0&&
-              <p className="text-xs" style={{color:C.muted}}>Importe um PLM pra ver as cores aqui.</p>}
+          <div className="overflow-x-auto">
+            <table className="text-sm" style={{borderCollapse:'collapse'}}>
+              <thead>
+                <tr>
+                  <th className="text-left px-3 py-2 text-xs uppercase" style={{color:C.muted,borderBottom:`1px solid ${C.border}`}}>Modelo</th>
+                  {coresColecao.map(c=>{
+                    const ks=allResults.flatMap(r=>r.variantes.filter(v=>normCor(v.nome)===c.key).map(v=>`${r.cod}::${v.nome}`))
+                    const on=ks.some(k=>!exclVar.has(k))
+                    return(
+                      <th key={c.key} onClick={()=>toggleCorColuna(c.key)}
+                        className="px-2 py-2 text-xs cursor-pointer whitespace-nowrap"
+                        title="Clique para tirar/voltar esta cor em todos os modelos"
+                        style={{color:on?C.text:C.muted,borderBottom:`1px solid ${C.border}`,
+                          textDecoration:on?'none':'line-through'}}>
+                        {c.nome}
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {allResults.map(r=>{
+                  const ks=r.variantes.map(v=>`${r.cod}::${v.nome}`)
+                  const rowOn=ks.some(k=>!exclVar.has(k))
+                  return(
+                    <tr key={r.cod} style={{borderBottom:`1px solid ${C.border}`}}>
+                      <td className="px-3 py-1.5 whitespace-nowrap">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={rowOn} style={{accentColor:C.purple}}
+                            onChange={()=>setExclVar(s=>{const n=new Set(s);ks.forEach(k=>rowOn?n.add(k):n.delete(k));return n})}/>
+                          <span className="font-mono text-xs" style={{color:C.muted}}>{r.cod}</span>
+                          <span style={{color:rowOn?C.text:C.muted}}>{r.tipo}</span>
+                        </label>
+                      </td>
+                      {coresColecao.map(c=>{
+                        const v=r.variantes.find(x=>normCor(x.nome)===c.key)
+                        if(!v) return <td key={c.key} className="text-center" style={{color:C.border}}>—</td>
+                        const k=`${r.cod}::${v.nome}`
+                        const on=!exclVar.has(k)
+                        return(
+                          <td key={c.key} className="text-center px-2 py-1.5">
+                            <label className="flex flex-col items-center cursor-pointer">
+                              <input type="checkbox" checked={on} style={{accentColor:C.purple}}
+                                onChange={()=>setExclVar(s=>toggleSet(s,k))}/>
+                              <span className="text-[10px]" style={{color:on?C.muted:C.border}}>{v.qtd}</span>
+                            </label>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
+          <p className="text-xs" style={{color:C.yellow}}>
+            Vai no relatório: {reportResults.length} modelo(s) · {reportResults.reduce((s,r)=>s+r.totalPecas,0)} peças ·{' '}
+            {R$(reportResults.reduce((s,r)=>s+r.valorTotalCliente,0))}
+          </p>
         </div>
       )}
 
@@ -1021,27 +1065,12 @@ ${m.ocItens.length>0?`<div class="section">
         {/* Lista de modelos (esquerda) */}
         <div className="flex flex-col gap-1 shrink-0" style={{width:200}}>
           <p className="text-xs uppercase tracking-wide mb-1" style={{color:C.muted}}>Modelos</p>
-          <p className="text-[10px] leading-tight mb-1" style={{color:C.muted}}>
-            ☑ = entra nos relatórios ({reportResults.length}/{allResults.length})
-          </p>
-          <div className="flex gap-2 mb-1">
-            <button onClick={()=>{setExclCod(new Set());setExclVar(new Set())}}
-              className="text-[10px] underline" style={{color:C.teal}}>Marcar todos</button>
-            <button onClick={()=>setExclCod(new Set(allResults.map(r=>r.cod)))}
-              className="text-[10px] underline" style={{color:C.pink}}>Desmarcar todos</button>
-          </div>
           {allResults.map(r=>(
-            <div key={r.cod} className="flex items-stretch gap-1">
-            <input type="checkbox" checked={!exclCod.has(r.cod)}
-              onChange={()=>setExclCod(s=>toggleSet(s,r.cod))}
-              title="Incluir este modelo nos relatórios"
-              className="cursor-pointer" style={{accentColor:C.purple}}/>
-            <button onClick={()=>setSelectedCod(r.cod)}
-              className="flex flex-col items-start px-3 py-2 rounded-lg text-left transition-all flex-1"
+            <button key={r.cod} onClick={()=>setSelectedCod(r.cod)}
+              className="flex flex-col items-start px-3 py-2 rounded-lg text-left transition-all"
               style={{
                 background:selectedCod===r.cod?C.purpleBg:C.surface,
                 border:`1px solid ${selectedCod===r.cod?C.purple:C.border}`,
-                opacity:exclCod.has(r.cod)?0.45:1,
               }}>
               <span className="font-mono text-xs" style={{color:selectedCod===r.cod?C.purple:C.muted}}>
                 {r.cod}
@@ -1051,7 +1080,6 @@ ${m.ocItens.length>0?`<div class="section">
                 {r.precoProp>0?R$(r.precoReal):'—'}
               </span>
             </button>
-            </div>
           ))}
         </div>
 
@@ -1098,27 +1126,6 @@ ${m.ocItens.length>0?`<div class="section">
                 </div>
               </div>
 
-              {/* ── Cores que entram nos relatórios ── */}
-              <div className="flex items-center gap-2 flex-wrap px-5 py-2"
-                style={{background:C.bg,borderBottom:`1px solid ${C.border}`}}>
-                <span className="text-xs uppercase tracking-wide" style={{color:C.muted}}>Cores no relatório:</span>
-                {m.variantes.map(v=>{
-                  const k=`${cod}::${v.nome}`
-                  const off=exclCor.has(v.nome)
-                  const on=!off&&!exclVar.has(k)
-                  return(
-                    <button key={v.nome} disabled={off}
-                      title={off?'Cor desmarcada para a coleção inteira (painel Cores do relatório)':''}
-                      onClick={()=>setExclVar(s=>toggleSet(s,k))}
-                      className="text-xs px-2 py-1 rounded-full"
-                      style={{background:on?C.purpleBg:'transparent',
-                        border:`1px solid ${on?C.purple:C.border}`,
-                        color:on?C.text:C.muted,textDecoration:on?'none':'line-through'}}>
-                      {on?'✓ ':''}{v.nome} · {v.qtd} pç
-                    </button>
-                  )
-                })}
-              </div>
               <div className="overflow-y-auto" style={{maxHeight:'calc(100vh - 360px)'}}>
 
                 {/* ── Matéria Prima ── */}
