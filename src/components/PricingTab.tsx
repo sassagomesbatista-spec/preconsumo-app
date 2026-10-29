@@ -193,6 +193,11 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   const [openSettings,setOpenSettings] = useState(false)
   const [toast,setToast] = useState<{msg:string;ok:boolean}|null>(null)
   const [selectedCod,setSelectedCod] = useState<string|null>(null)
+  // Seleção do que entra nos relatórios: modelos desmarcados e cores
+  // (variantes) desmarcadas, chave "cod::variante". Vazio = tudo entra.
+  const [exclCod,setExclCod] = useState<Set<string>>(()=>new Set())
+  const [exclVar,setExclVar] = useState<Set<string>>(()=>new Set())
+  const toggleSet=(set:Set<string>,k:string)=>{const n=new Set(set);n.has(k)?n.delete(k):n.add(k);return n}
 
   useEffect(()=>{localStorage.setItem('prec-v9',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
 
@@ -332,15 +337,28 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     })
     const totalPecas=[...variantMap.values()].reduce((s,v)=>s+v,0)
     const valorTotalCliente=totalPecas*precoReal
+    const variantes=[...variantMap.entries()].map(([nome,qtd])=>({nome,qtd}))
 
     return{tipo,dif,coef,nr,tempo,tecidoItens,ocItens,ocItensGlobais,ocItensTipo,custoTecido,custoOC,
-           custoMP,custoMOD,custoTotal,precoProp,markup,precoReal,lucroReal,totalPecas,valorTotalCliente}
+           custoMP,custoMOD,custoTotal,precoProp,markup,precoReal,lucroReal,totalPecas,valorTotalCliente,variantes}
   }
 
   const allResults=useMemo(()=>
     uniqCodigos.map(([cod,crs])=>({cod,...calcModel(cod,crs)}))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ,[uniqCodigos,cfg,precoPorKg,totalDesp])
+
+  // Só o que está marcado: modelos selecionados, com a quantidade e o valor
+  // recalculados apenas pelas cores selecionadas.
+  const reportResults=useMemo(()=>
+    allResults.filter(r=>!exclCod.has(r.cod)).map(r=>{
+      const vs=r.variantes.filter(v=>!exclVar.has(`${r.cod}::${v.nome}`))
+      const totalPecas=vs.reduce((s,v)=>s+v.qtd,0)
+      return{...r,variantesSel:vs,totalPecas,valorTotalCliente:totalPecas*r.precoReal}
+    }).filter(r=>r.variantesSel.length>0)
+  ,[allResults,exclCod,exclVar])
+  const selecaoParcial=reportResults.length!==allResults.length||
+    reportResults.some(r=>r.variantesSel.length!==r.variantes.length)
 
   useEffect(()=>{
     onResultsChange?.(allResults.map(r=>({cod:r.cod,tipo:r.tipo,precoAtacado:r.precoReal,totalPecas:r.totalPecas})))
@@ -582,6 +600,7 @@ ${m.ocItens.length>0?`<div class="section">
 
   /* ── Relatório geral (todos os modelos) ────────────── */
   const printAllModels=()=>{
+    if(reportResults.length===0){toast_('Nenhum modelo/cor selecionado para o relatório',false);return}
     const colecao = rows[0]?.colecao ?? ''
     const w=window.open('','_blank','width=1100,height=900')
     if(!w) return
@@ -604,7 +623,7 @@ ${m.ocItens.length>0?`<div class="section">
 </style>
 </head><body>
 <h1>Relatório de Precificação</h1>
-<p class="sub">Coleção: ${colecao} &nbsp;·&nbsp; ${allResults.length} modelo(s) &nbsp;·&nbsp; Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
+<p class="sub">Coleção: ${colecao} &nbsp;·&nbsp; ${reportResults.length} modelo(s) &nbsp;·&nbsp; Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
 <table>
   <thead><tr>
     <th>Código</th><th>Tipo</th><th>Dificuldade</th><th>Custo Tecidos</th><th>Custo Outros</th>
@@ -612,7 +631,7 @@ ${m.ocItens.length>0?`<div class="section">
     <th>Qtd. Peças</th><th>Valor Total</th>
   </tr></thead>
   <tbody>
-  ${allResults.map(m=>`
+  ${reportResults.map(m=>`
     <tr>
       <td class="left">${m.cod}</td>
       <td class="left">${m.tipo}</td>
@@ -632,8 +651,8 @@ ${m.ocItens.length>0?`<div class="section">
   <tfoot>
     <tr style="font-weight:700">
       <td class="left" colspan="11">VALOR TOTAL DO PEDIDO</td>
-      <td>${allResults.reduce((s,m)=>s+m.totalPecas,0)}</td>
-      <td class="price">${R$(allResults.reduce((s,m)=>s+m.valorTotalCliente,0))}</td>
+      <td>${reportResults.reduce((s,m)=>s+m.totalPecas,0)}</td>
+      <td class="price">${R$(reportResults.reduce((s,m)=>s+m.valorTotalCliente,0))}</td>
     </tr>
   </tfoot>
 </table>
@@ -645,6 +664,7 @@ ${m.ocItens.length>0?`<div class="section">
 
   /* ── Relatório para o cliente (sem custos/dificuldade) ── */
   const printClientReport=()=>{
+    if(reportResults.length===0){toast_('Nenhum modelo/cor selecionado para o relatório',false);return}
     const colecao = rows[0]?.colecao ?? ''
     const w=window.open('','_blank','width=1100,height=900')
     if(!w) return
@@ -667,16 +687,17 @@ ${m.ocItens.length>0?`<div class="section">
 </style>
 </head><body>
 <h1>Proposta de Preços</h1>
-<p class="sub">Coleção: ${colecao} &nbsp;·&nbsp; ${allResults.length} modelo(s) &nbsp;·&nbsp; Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
+<p class="sub">Coleção: ${colecao} &nbsp;·&nbsp; ${reportResults.length} modelo(s) &nbsp;·&nbsp; Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
 <table>
   <thead><tr>
-    <th>Código</th><th>Tipo</th><th>Preço de Venda</th><th>Qtd. Peças</th><th>Valor Total</th>
+    <th>Código</th><th>Tipo</th><th>Cores</th><th>Preço de Venda</th><th>Qtd. Peças</th><th>Valor Total</th>
   </tr></thead>
   <tbody>
-  ${allResults.map(m=>`
+  ${reportResults.map(m=>`
     <tr>
       <td class="left">${m.cod}</td>
       <td class="left">${m.tipo}</td>
+      <td class="left">${m.variantesSel.map(v=>`${v.nome} (${v.qtd})`).join('<br>')}</td>
       <td class="price">${R$(m.precoReal)}</td>
       <td>${m.totalPecas}</td>
       <td class="price">${R$(m.valorTotalCliente)}</td>
@@ -684,9 +705,9 @@ ${m.ocItens.length>0?`<div class="section">
   </tbody>
   <tfoot>
     <tr style="font-weight:700">
-      <td class="left" colspan="3">VALOR TOTAL DO PEDIDO</td>
-      <td>${allResults.reduce((s,m)=>s+m.totalPecas,0)}</td>
-      <td class="price">${R$(allResults.reduce((s,m)=>s+m.valorTotalCliente,0))}</td>
+      <td class="left" colspan="4">VALOR TOTAL DO PEDIDO</td>
+      <td>${reportResults.reduce((s,m)=>s+m.totalPecas,0)}</td>
+      <td class="price">${R$(reportResults.reduce((s,m)=>s+m.valorTotalCliente,0))}</td>
     </tr>
   </tfoot>
 </table>
@@ -697,6 +718,7 @@ ${m.ocItens.length>0?`<div class="section">
   }
 
   const exportPricingExcel=async()=>{
+    if(reportResults.length===0){toast_('Nenhum modelo/cor selecionado para o relatório',false);return}
     const ExcelJS=(await import('exceljs')).default
     const colecao = rows[0]?.colecao ?? ''
     const wb=new ExcelJS.Workbook()
@@ -727,7 +749,7 @@ ${m.ocItens.length>0?`<div class="section">
       cell.alignment={horizontal:'center',vertical:'middle'}
     })
 
-    allResults.forEach((m,i)=>{
+    reportResults.forEach((m,i)=>{
       const r=ws.addRow({
         cod:m.cod, tipo:m.tipo,
         dif:m.dif==='FACIL'?'Fácil':m.dif==='MEDIO'?'Médio':'Difícil',
@@ -751,8 +773,8 @@ ${m.ocItens.length>0?`<div class="section">
 
     const totalRow=ws.addRow({
       tipo:'VALOR TOTAL DO PEDIDO',
-      totalPecas:allResults.reduce((s,m)=>s+m.totalPecas,0),
-      valorTotalCliente:allResults.reduce((s,m)=>s+m.valorTotalCliente,0),
+      totalPecas:reportResults.reduce((s,m)=>s+m.totalPecas,0),
+      valorTotalCliente:reportResults.reduce((s,m)=>s+m.valorTotalCliente,0),
     })
     totalRow.eachCell((cell,col)=>{
       cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE0E0E0'}}
@@ -826,6 +848,9 @@ ${m.ocItens.length>0?`<div class="section">
           style={{color:C.muted,border:`1px solid ${C.border}`}}>
           {openSettings?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Configurações
         </button>
+        {selecaoParcial&&<p className="text-xs w-full" style={{color:C.yellow}}>
+          Relatórios com seleção: {reportResults.length} de {allResults.length} modelo(s) · {reportResults.reduce((s,r)=>s+r.totalPecas,0)} peças
+        </p>}
         {toast&&<p className="text-xs w-full" style={{color:toast.ok?C.teal:C.pink}}>{toast.msg}</p>}
       </div>
 
@@ -945,12 +970,27 @@ ${m.ocItens.length>0?`<div class="section">
         {/* Lista de modelos (esquerda) */}
         <div className="flex flex-col gap-1 shrink-0" style={{width:200}}>
           <p className="text-xs uppercase tracking-wide mb-1" style={{color:C.muted}}>Modelos</p>
+          <p className="text-[10px] leading-tight mb-1" style={{color:C.muted}}>
+            ☑ = entra nos relatórios ({reportResults.length}/{allResults.length})
+          </p>
+          <div className="flex gap-2 mb-1">
+            <button onClick={()=>{setExclCod(new Set());setExclVar(new Set())}}
+              className="text-[10px] underline" style={{color:C.teal}}>Marcar todos</button>
+            <button onClick={()=>setExclCod(new Set(allResults.map(r=>r.cod)))}
+              className="text-[10px] underline" style={{color:C.pink}}>Desmarcar todos</button>
+          </div>
           {allResults.map(r=>(
-            <button key={r.cod} onClick={()=>setSelectedCod(r.cod)}
-              className="flex flex-col items-start px-3 py-2 rounded-lg text-left transition-all"
+            <div key={r.cod} className="flex items-stretch gap-1">
+            <input type="checkbox" checked={!exclCod.has(r.cod)}
+              onChange={()=>setExclCod(s=>toggleSet(s,r.cod))}
+              title="Incluir este modelo nos relatórios"
+              className="cursor-pointer" style={{accentColor:C.purple}}/>
+            <button onClick={()=>setSelectedCod(r.cod)}
+              className="flex flex-col items-start px-3 py-2 rounded-lg text-left transition-all flex-1"
               style={{
                 background:selectedCod===r.cod?C.purpleBg:C.surface,
                 border:`1px solid ${selectedCod===r.cod?C.purple:C.border}`,
+                opacity:exclCod.has(r.cod)?0.45:1,
               }}>
               <span className="font-mono text-xs" style={{color:selectedCod===r.cod?C.purple:C.muted}}>
                 {r.cod}
@@ -960,6 +1000,7 @@ ${m.ocItens.length>0?`<div class="section">
                 {r.precoProp>0?R$(r.precoReal):'—'}
               </span>
             </button>
+            </div>
           ))}
         </div>
 
@@ -1006,6 +1047,24 @@ ${m.ocItens.length>0?`<div class="section">
                 </div>
               </div>
 
+              {/* ── Cores que entram nos relatórios ── */}
+              <div className="flex items-center gap-2 flex-wrap px-5 py-2"
+                style={{background:C.bg,borderBottom:`1px solid ${C.border}`}}>
+                <span className="text-xs uppercase tracking-wide" style={{color:C.muted}}>Cores no relatório:</span>
+                {m.variantes.map(v=>{
+                  const k=`${cod}::${v.nome}`
+                  const on=!exclVar.has(k)
+                  return(
+                    <button key={v.nome} onClick={()=>setExclVar(s=>toggleSet(s,k))}
+                      className="text-xs px-2 py-1 rounded-full"
+                      style={{background:on?C.purpleBg:'transparent',
+                        border:`1px solid ${on?C.purple:C.border}`,
+                        color:on?C.text:C.muted,textDecoration:on?'none':'line-through'}}>
+                      {on?'✓ ':''}{v.nome} · {v.qtd} pç
+                    </button>
+                  )
+                })}
+              </div>
               <div className="overflow-y-auto" style={{maxHeight:'calc(100vh - 360px)'}}>
 
                 {/* ── Matéria Prima ── */}
