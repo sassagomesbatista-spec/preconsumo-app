@@ -219,6 +219,24 @@ useEffect(() => {
     finally { setLoading(false) }
   }, [rows])
 
+  // Usado pelo botão "Importar PLM (Excel)" da aba Precificação: além de
+  // atualizar preços, adiciona as referências da planilha que ainda não estão
+  // no projeto (antes ele só atualizava preço e os modelos novos sumiam).
+  const addModelsFromFile = useCallback(async (file: File): Promise<string[]> => {
+    const imported = await importExcel(file)
+    const existingCods = new Set(rows.map(r => r.codigo))
+    const newRows = imported.rows.filter(r => !existingCods.has(r.codigo))
+    const newCods = [...new Set(newRows.map(r => r.codigo))]
+    if (newCods.length > 0) {
+      setRows(prev => [...prev, ...newRows])
+      setResult(prev => prev ? {
+        ...prev,
+        extraColumns: [...new Set([...prev.extraColumns, ...imported.extraColumns])],
+      } : imported)
+    }
+    return newCods
+  }, [rows])
+
   const handleUpdateQtade = useCallback((id: string, qtade: number) => {
     setRows(prev => prev.map(r =>
       r.id === id ? { ...r, qtadeACortar: qtade, consumoTotal: Math.round(r.consumo * qtade * 1000) / 1000 } : r
@@ -414,7 +432,7 @@ useEffect(() => {
               {tab === 'dados'         && <DataTable rows={rows} onUpdate={handleUpdateQtade} onBulkUpdate={handleBulkUpdateQtade} />}
               {tab === 'analise'      && <AnalysisTab rows={rows} />}
               {tab === 'totais'       && <TotalsTab rows={rows} />}
-              {tab === 'precificacao' && <PricingTab key={pricingKey} rows={rows} plmData={result?.plmData} importId={result?.importId} initialConfig={pricingConfig as Parameters<typeof PricingTab>[0]['initialConfig']} onConfigChange={setPricingConfig} onResultsChange={setAtacadoPrecos} />}
+              {tab === 'precificacao' && <PricingTab key={pricingKey} rows={rows} plmData={result?.plmData} importId={result?.importId} initialConfig={pricingConfig as Parameters<typeof PricingTab>[0]['initialConfig']} onConfigChange={setPricingConfig} onResultsChange={setAtacadoPrecos} onAddModels={addModelsFromFile} />}
               {tab === 'revenda'      && <ResaleTab key={pricingKey} precos={atacadoPrecos} initialConfig={revendaConfig as Parameters<typeof ResaleTab>[0]['initialConfig']} onConfigChange={setRevendaConfig} />}
               {tab === 'historico'    && <HistoryTab currentProjectId={currentProjectId} onOpen={handleOpenHistoryProject} canDelete={isAdmin} />}
             </div>

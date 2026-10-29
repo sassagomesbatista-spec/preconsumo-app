@@ -153,9 +153,10 @@ interface Props {
   rows:FabricRow[]; plmData?:PlmData; importId?:string
   initialConfig?:Partial<Config>|null; onConfigChange?:(cfg:Config)=>void
   onResultsChange?:(precos:AtacadoPreco[])=>void
+  onAddModels?:(file:File)=>Promise<string[]>
 }
 
-export default function PricingTab({rows,plmData,importId,initialConfig,onConfigChange,onResultsChange}:Props){
+export default function PricingTab({rows,plmData,importId,initialConfig,onConfigChange,onResultsChange,onAddModels}:Props){
   const plmRef  = useRef<HTMLInputElement>(null)
   const pdfRef  = useRef<HTMLInputElement>(null)
   const [cfg,setCfg] = useState<Config>(()=>{
@@ -380,7 +381,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[allResults])
 
-  const toast_=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),4000)}
+  const toast_=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),msg.length>90?9000:4000)}
 
   // A aba "Tecidos de variantes" (de onde vem o Tipo Peça de cada modelo) e
   // as abas "Aviamentos"/"Outros custos" (de onde vem o Tipo Peça dos
@@ -461,7 +462,11 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
       if(!wb.Sheets['Tecidos']){toast_('Aba "Tecidos" não encontrada.',false);return}
       const plm=extractPlmData(wb)
       applyPlmData(plm)
-      toast_('✓ PLM importado — preços de tecido e outros custos atualizados.')
+      let novos:string[]=[]
+      try{ novos=await onAddModels?.(file)??[] }catch{ /* sem aba de variantes: só preços */ }
+      toast_(novos.length>0
+        ? `✓ PLM importado — preços atualizados e ${novos.length} modelo(s) novo(s) adicionado(s): ${novos.join(', ')}. Preencha a quantidade a cortar deles na aba Dados.`
+        : '✓ PLM importado — preços de tecido e outros custos atualizados. Nenhum modelo novo na planilha.')
     }catch{toast_('Erro ao ler PLM.',false)}
   }
 
