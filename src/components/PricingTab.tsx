@@ -30,6 +30,12 @@ interface Config {
   nrOp:        Record<string,number>
   precoReal:   Record<string,number>   // preço de venda aprovado por código
   lastPlmImportId?: string
+  proposta?: PropostaInfo
+}
+interface PropostaInfo {
+  cliente:string; contato:string; numero:string; validadeDias:number
+  prazoEntrega:string; condicaoPagamento:string; observacoes:string
+  ocultarSemQtd:boolean
 }
 
 const BASE_DEFAULT:Record<string,BaseCoef> = {
@@ -154,9 +160,10 @@ interface Props {
   initialConfig?:Partial<Config>|null; onConfigChange?:(cfg:Config)=>void
   onResultsChange?:(precos:AtacadoPreco[])=>void
   onAddModels?:(file:File)=>Promise<string[]>
+  clientName?:string
 }
 
-export default function PricingTab({rows,plmData,importId,initialConfig,onConfigChange,onResultsChange,onAddModels}:Props){
+export default function PricingTab({rows,plmData,importId,initialConfig,onConfigChange,onResultsChange,onAddModels,clientName}:Props){
   const plmRef  = useRef<HTMLInputElement>(null)
   const pdfRef  = useRef<HTMLInputElement>(null)
   const [cfg,setCfg] = useState<Config>(()=>{
@@ -199,6 +206,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   const [exclCod,setExclCod] = useState<Set<string>>(()=>new Set())
   const [exclVar,setExclVar] = useState<Set<string>>(()=>new Set())
   const [openMontar,setOpenMontar] = useState(false)
+  const [openProposta,setOpenProposta] = useState(false)
   const toggleSet=(set:Set<string>,k:string)=>{const n=new Set(set);n.has(k)?n.delete(k):n.add(k);return n}
 
   useEffect(()=>{localStorage.setItem('prec-v9',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
@@ -683,56 +691,135 @@ ${m.ocItens.length>0?`<div class="section">
   }
 
   /* ── Relatório para o cliente (sem custos/dificuldade) ── */
-  const printClientReport=()=>{
+  const propostaDefault=():PropostaInfo=>{
+    const d=new Date(),pad=(n:number)=>String(n).padStart(2,'0')
+    return{cliente:clientName??'',contato:'',
+      numero:`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`,
+      validadeDias:15,prazoEntrega:'',condicaoPagamento:'',observacoes:'',ocultarSemQtd:true}
+  }
+  const [prop,setProp]=useState<PropostaInfo>(()=>({...propostaDefault(),...(cfg.proposta??{})}))
+  const abrirProposta=()=>{
     if(reportResults.length===0){toast_('Nenhum modelo/cor selecionado para o relatório',false);return}
+    // número novo a cada proposta; o resto vem do que ela preencheu da última vez
+    setProp(p=>({...p,cliente:p.cliente||clientName||'',numero:propostaDefault().numero}))
+    setOpenProposta(true)
+  }
+  const esc=(t:string)=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
+
+  /* ── Proposta comercial para o cliente (sem custos/dificuldade) ── */
+  const printClientReport=()=>{
+    setCfg(c=>({...c,proposta:prop}))
+    setOpenProposta(false)
+    const itens=reportResults.filter(m=>!prop.ocultarSemQtd||m.totalPecas>0)
+    if(itens.length===0){toast_('Nenhum modelo com quantidade para a proposta',false);return}
     const colecao = rows[0]?.colecao ?? ''
+    const r2=(n:number)=>Math.round(n*100)/100
+    const linhas=itens.map(m=>({...m,preco:r2(m.precoReal),total:r2(m.precoReal)*m.totalPecas}))
+    const totalPecas=linhas.reduce((s,m)=>s+m.totalPecas,0)
+    const totalValor=linhas.reduce((s,m)=>s+m.total,0)
+    const hoje=new Date()
+    const validade=new Date(hoje.getTime()+prop.validadeDias*86400000)
+    const fmt=(d:Date)=>d.toLocaleDateString('pt-BR')
+    const logo=`${window.location.origin}/logo.png`
+    const cond=[
+      ['Condição de pagamento',prop.condicaoPagamento],
+      ['Prazo de entrega',prop.prazoEntrega],
+      ['Validade da proposta',`${prop.validadeDias} dias (até ${fmt(validade)})`],
+    ].filter(([,v])=>v.trim())
     const w=window.open('','_blank','width=1100,height=900')
     if(!w) return
     w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
-<title>Proposta de Preços — ${colecao}</title>
+<title>Proposta ${esc(prop.numero)} — ${esc(prop.cliente||colecao)}</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:Arial,sans-serif;color:#1a1a1a;padding:32px;font-size:11px}
-  h1{font-size:18px;margin-bottom:4px}
-  p.sub{color:#666;font-size:11px;margin-bottom:16px}
+  body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;padding:36px 40px;font-size:11px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1a1a1a;padding-bottom:14px}
+  .top img{height:54px}
+  .empresa{text-align:right;font-size:9.5px;color:#555;line-height:1.5}
+  .empresa b{color:#1a1a1a;font-size:10.5px}
+  .titulo{display:flex;justify-content:space-between;align-items:flex-end;margin:22px 0 14px}
+  h1{font-size:20px;letter-spacing:1px;text-transform:uppercase}
+  .num{font-size:10.5px;color:#555;text-align:right;line-height:1.5}
+  .num b{color:#1a1a1a}
+  .cli{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;background:#f5f3f0;padding:12px 16px;border-radius:4px;margin-bottom:18px}
+  .cli span{display:block;font-size:9px;color:#777;text-transform:uppercase;letter-spacing:.5px}
+  .cli b{font-size:12px}
   table{width:100%;border-collapse:collapse}
-  th,td{border:1px solid #ddd;padding:6px 8px;text-align:right}
-  th{background:#1a1a1a;color:#fff;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+  th,td{border-bottom:1px solid #e3e3e3;padding:7px 8px;text-align:right;vertical-align:top}
+  th{background:#1a1a1a;color:#fff;text-align:center;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;border:none}
   td.left{text-align:left}
-  tr:nth-child(even) td{background:#f7f7f7}
-  td.price{font-weight:700;color:#2D6A4F}
-  .footer{margin-top:24px;font-size:10px;color:#999;text-align:center}
-  @media print{body{padding:16px}}
+  td.cores{font-size:10px;color:#444;line-height:1.5}
+  tr:nth-child(even) td{background:#fafafa}
+  tfoot td{font-weight:700;font-size:12px;border-top:2px solid #1a1a1a;border-bottom:none;background:#fff!important}
+  .price{font-weight:700}
+  .box{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .box h3{font-size:10px;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:4px}
+  .box p{line-height:1.6;font-size:10.5px}
+  .box p span{color:#777}
+  .assin{margin-top:56px;display:grid;grid-template-columns:1fr 1fr;gap:48px;text-align:center;font-size:10px}
+  .assin div{border-top:1px solid #1a1a1a;padding-top:6px}
+  .footer{margin-top:28px;font-size:9px;color:#999;text-align:center}
+  @media print{body{padding:18px 22px}}
 </style>
 </head><body>
-<h1>Proposta de Preços</h1>
-<p class="sub">Coleção: ${colecao} &nbsp;·&nbsp; ${reportResults.length} modelo(s) &nbsp;·&nbsp; Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
+<div class="top">
+  <img src="${logo}" alt="Samanta Gomes" onerror="this.style.display='none'">
+  <div class="empresa">
+    <b>Samanta Gomes Fashion Office Ltda</b><br>
+    CNPJ 45.966.999/0001-66<br>
+    Av. Julio Antonio Thurler, 227, sala 301 — Olaria, Nova Friburgo/RJ<br>
+    samantafashionoffice.com.br &nbsp;·&nbsp; @samantagomesoffice
+  </div>
+</div>
+<div class="titulo">
+  <h1>Proposta Comercial</h1>
+  <div class="num">Proposta nº <b>${esc(prop.numero)}</b><br>Emitida em ${fmt(hoje)}</div>
+</div>
+<div class="cli">
+  <div><span>Cliente</span><b>${esc(prop.cliente||'—')}</b></div>
+  <div><span>Coleção</span><b>${esc(colecao||'—')}</b></div>
+  ${prop.contato.trim()?`<div><span>A/C</span><b>${esc(prop.contato)}</b></div>`:''}
+  <div><span>Resumo</span><b>${linhas.length} modelo(s) · ${totalPecas} peças</b></div>
+</div>
 <table>
   <thead><tr>
-    <th>Código</th><th>Tipo</th><th>Cores</th><th>Preço de Venda</th><th>Qtd. Peças</th><th>Valor Total</th>
+    <th>Referência</th><th>Produto</th><th>Cores (qtd.)</th><th>Preço unit.</th><th>Qtd.</th><th>Total</th>
   </tr></thead>
   <tbody>
-  ${reportResults.map(m=>`
+  ${linhas.map(m=>`
     <tr>
-      <td class="left">${m.cod}</td>
-      <td class="left">${m.tipo}</td>
-      <td class="left">${m.variantesSel.map(v=>`${v.nome} (${v.qtd})`).join('<br>')}</td>
-      <td class="price">${R$(m.precoReal)}</td>
+      <td class="left"><b>${m.cod}</b></td>
+      <td class="left">${esc(m.tipo)}</td>
+      <td class="left cores">${m.variantesSel.map(v=>`${esc(v.nome)} (${v.qtd})`).join('<br>')}</td>
+      <td class="price">${R$(m.preco)}</td>
       <td>${m.totalPecas}</td>
-      <td class="price">${R$(m.valorTotalCliente)}</td>
+      <td class="price">${R$(m.total)}</td>
     </tr>`).join('')}
   </tbody>
   <tfoot>
-    <tr style="font-weight:700">
+    <tr>
       <td class="left" colspan="4">VALOR TOTAL DO PEDIDO</td>
-      <td>${reportResults.reduce((s,m)=>s+m.totalPecas,0)}</td>
-      <td class="price">${R$(reportResults.reduce((s,m)=>s+m.valorTotalCliente,0))}</td>
+      <td>${totalPecas}</td>
+      <td>${R$(totalValor)}</td>
     </tr>
   </tfoot>
 </table>
-<div class="footer">Samanta Gomes Fashion Office &nbsp;·&nbsp; Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
-<script>setTimeout(()=>window.print(),300)</script>
+<div class="box">
+  <div>
+    <h3>Condições comerciais</h3>
+    ${cond.map(([k,v])=>`<p><span>${k}:</span> ${esc(v)}</p>`).join('')}
+  </div>
+  <div>
+    ${prop.observacoes.trim()?`<h3>Observações</h3><p>${esc(prop.observacoes)}</p>`:''}
+  </div>
+</div>
+<div class="assin">
+  <div>Samanta Gomes Fashion Office</div>
+  <div>De acordo — ${esc(prop.cliente||'Cliente')}</div>
+</div>
+<div class="footer">Valores em reais (R$). Proposta nº ${esc(prop.numero)} · emitida em ${fmt(hoje)}.</div>
+<script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
 </body></html>`)
     w.document.close()
   }
@@ -858,7 +945,7 @@ ${m.ocItens.length>0?`<div class="section">
           style={{background:C.greenBg,border:`1px solid ${C.green}`,color:C.green}}>
           <FileSpreadsheet size={13}/> Relatório Geral (Excel)
         </button>
-        <button onClick={printClientReport}
+        <button onClick={abrirProposta}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
           style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
           <Printer size={13}/> Proposta para Cliente (PDF)
@@ -878,6 +965,62 @@ ${m.ocItens.length>0?`<div class="section">
         </p>}
         {toast&&<p className="text-xs w-full" style={{color:toast.ok?C.teal:C.pink}}>{toast.msg}</p>}
       </div>
+
+      {/* ── Dados da proposta comercial ── */}
+      {openProposta&&(()=>{
+        const semQtd=reportResults.filter(m=>m.totalPecas===0)
+        const inp="w-full rounded-lg px-3 py-2 text-sm outline-none"
+        const st={background:C.bg,border:`1px solid ${C.border}`,color:C.text}
+        const lab="text-xs uppercase tracking-wide mb-1 block"
+        return(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:'rgba(0,0,0,.6)'}}
+          onClick={()=>setOpenProposta(false)}>
+          <div className="rounded-2xl p-6 w-full max-w-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+            style={{background:C.surface,border:`1px solid ${C.border}`}} onClick={e=>e.stopPropagation()}>
+            <div>
+              <h2 className="text-lg font-semibold" style={{color:C.text}}>Proposta para Cliente</h2>
+              <p className="text-xs" style={{color:C.muted}}>Preencha o que deve sair no PDF. Fica salvo para a próxima proposta.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label><span className={lab} style={{color:C.muted}}>Cliente</span>
+                <input className={inp} style={st} value={prop.cliente} onChange={e=>setProp(p=>({...p,cliente:e.target.value}))}/></label>
+              <label><span className={lab} style={{color:C.muted}}>A/C (contato)</span>
+                <input className={inp} style={st} value={prop.contato} placeholder="Opcional" onChange={e=>setProp(p=>({...p,contato:e.target.value}))}/></label>
+              <label><span className={lab} style={{color:C.muted}}>Nº da proposta</span>
+                <input className={inp} style={st} value={prop.numero} onChange={e=>setProp(p=>({...p,numero:e.target.value}))}/></label>
+              <label><span className={lab} style={{color:C.muted}}>Validade (dias)</span>
+                <input type="number" min={1} className={inp} style={st} value={prop.validadeDias}
+                  onChange={e=>setProp(p=>({...p,validadeDias:Math.max(1,Number(e.target.value)||1)}))}/></label>
+              <label className="col-span-2"><span className={lab} style={{color:C.muted}}>Prazo de entrega</span>
+                <input className={inp} style={st} value={prop.prazoEntrega} placeholder="Ex.: 45 dias após aprovação e pagamento do sinal"
+                  onChange={e=>setProp(p=>({...p,prazoEntrega:e.target.value}))}/></label>
+              <label className="col-span-2"><span className={lab} style={{color:C.muted}}>Condição de pagamento</span>
+                <input className={inp} style={st} value={prop.condicaoPagamento} placeholder="Ex.: 50% de sinal + 50% na entrega, via PIX"
+                  onChange={e=>setProp(p=>({...p,condicaoPagamento:e.target.value}))}/></label>
+              <label className="col-span-2"><span className={lab} style={{color:C.muted}}>Observações</span>
+                <textarea rows={4} className={inp} style={st} value={prop.observacoes}
+                  placeholder="Ex.: Frete por conta do cliente. Grade P ao GG."
+                  onChange={e=>setProp(p=>({...p,observacoes:e.target.value}))}/></label>
+            </div>
+            {semQtd.length>0&&(
+              <label className="flex items-start gap-2 text-sm rounded-lg p-3 cursor-pointer"
+                style={{background:C.bg,border:`1px solid ${C.yellow}`,color:C.text}}>
+                <input type="checkbox" className="mt-1" checked={prop.ocultarSemQtd} style={{accentColor:C.purple}}
+                  onChange={e=>setProp(p=>({...p,ocultarSemQtd:e.target.checked}))}/>
+                <span>Deixar de fora os modelos <b>sem quantidade</b> ({semQtd.map(m=>m.cod).join(', ')}).
+                  <span className="block text-xs" style={{color:C.muted}}>Para incluir, preencha a quantidade a cortar na aba Dados.</span></span>
+              </label>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={()=>setOpenProposta(false)} className="px-4 py-2 rounded-lg text-sm"
+                style={{color:C.muted,border:`1px solid ${C.border}`}}>Cancelar</button>
+              <button onClick={printClientReport} className="px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{background:C.purple,color:'#fff'}}>Gerar proposta (PDF)</button>
+            </div>
+          </div>
+        </div>
+        )
+      })()}
 
       {/* ── Escolher modelos e cores do relatório (tabela única) ── */}
       {openMontar&&(

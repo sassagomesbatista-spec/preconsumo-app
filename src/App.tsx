@@ -432,7 +432,7 @@ useEffect(() => {
               {tab === 'dados'         && <DataTable rows={rows} onUpdate={handleUpdateQtade} onBulkUpdate={handleBulkUpdateQtade} />}
               {tab === 'analise'      && <AnalysisTab rows={rows} />}
               {tab === 'totais'       && <TotalsTab rows={rows} />}
-              {tab === 'precificacao' && <PricingTab key={pricingKey} rows={rows} plmData={result?.plmData} importId={result?.importId} initialConfig={pricingConfig as Parameters<typeof PricingTab>[0]['initialConfig']} onConfigChange={setPricingConfig} onResultsChange={setAtacadoPrecos} onAddModels={addModelsFromFile} />}
+              {tab === 'precificacao' && <PricingTab key={pricingKey} rows={rows} plmData={result?.plmData} importId={result?.importId} initialConfig={pricingConfig as Parameters<typeof PricingTab>[0]['initialConfig']} onConfigChange={setPricingConfig} onResultsChange={setAtacadoPrecos} onAddModels={addModelsFromFile} clientName={clientName} />}
               {tab === 'revenda'      && <ResaleTab key={pricingKey} precos={atacadoPrecos} initialConfig={revendaConfig as Parameters<typeof ResaleTab>[0]['initialConfig']} onConfigChange={setRevendaConfig} />}
               {tab === 'historico'    && <HistoryTab currentProjectId={currentProjectId} onOpen={handleOpenHistoryProject} canDelete={isAdmin} />}
             </div>
