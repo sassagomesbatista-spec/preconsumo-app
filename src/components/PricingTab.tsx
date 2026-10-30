@@ -36,7 +36,11 @@ interface PropostaInfo {
   cliente:string; contato:string; numero:string; validadeDias:number
   prazoEntrega:string; condicaoPagamento:string; observacoes:string
   ocultarSemQtd:boolean
+  frete?:string; tag?:string; transfer?:string
 }
+const OPC_FRETE=['Por conta do cliente','Por nossa conta']
+const OPC_TAG=['Envio de tag e prendedor de tag é responsabilidade do cliente','Tag e prendedor de tag inclusos (por nossa conta)','Não se aplica']
+const OPC_TRANSFER=['Desenvolvido por nós','Enviado pelo cliente','Não se aplica']
 
 const BASE_DEFAULT:Record<string,BaseCoef> = {
   BERMUDA:{facil:.60,medio:.70,dificil:.80}, BIQUINE:{facil:.60,medio:.70,dificil:.80},
@@ -695,7 +699,8 @@ ${m.ocItens.length>0?`<div class="section">
     const d=new Date(),pad=(n:number)=>String(n).padStart(2,'0')
     return{cliente:clientName??'',contato:'',
       numero:`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`,
-      validadeDias:15,prazoEntrega:'',condicaoPagamento:'',observacoes:'',ocultarSemQtd:true}
+      validadeDias:15,prazoEntrega:'',condicaoPagamento:'',observacoes:'',ocultarSemQtd:true,
+      frete:OPC_FRETE[0],tag:OPC_TAG[0],transfer:OPC_TRANSFER[0]}
   }
   const [prop,setProp]=useState<PropostaInfo>(()=>({...propostaDefault(),...(cfg.proposta??{})}))
   const abrirProposta=()=>{
@@ -725,6 +730,11 @@ ${m.ocItens.length>0?`<div class="section">
       ['Condição de pagamento',prop.condicaoPagamento],
       ['Prazo de entrega',prop.prazoEntrega],
       ['Validade da proposta',`${prop.validadeDias} dias (até ${fmt(validade)})`],
+    ].filter(([,v])=>v.trim())
+    const resp=[
+      ['Frete',prop.frete??''],
+      ['Tag e prendedor',prop.tag??''],
+      ['Transfer',prop.transfer??''],
     ].filter(([,v])=>v.trim())
     const w=window.open('','_blank','width=1100,height=900')
     if(!w) return
@@ -811,9 +821,11 @@ ${m.ocItens.length>0?`<div class="section">
     ${cond.map(([k,v])=>`<p><span>${k}:</span> ${esc(v)}</p>`).join('')}
   </div>
   <div>
-    ${prop.observacoes.trim()?`<h3>Observações</h3><p>${esc(prop.observacoes)}</p>`:''}
+    <h3>Responsabilidades</h3>
+    ${resp.map(([k,v])=>`<p><span>${k}:</span> ${esc(v)}</p>`).join('')}
   </div>
 </div>
+${prop.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><div><h3>Informações complementares</h3><p>${esc(prop.observacoes)}</p></div></div>`:''}
 <div class="assin">
   <div>Samanta Gomes Fashion Office</div>
   <div>De acordo — ${esc(prop.cliente||'Cliente')}</div>
@@ -997,9 +1009,21 @@ ${m.ocItens.length>0?`<div class="section">
               <label className="col-span-2"><span className={lab} style={{color:C.muted}}>Condição de pagamento</span>
                 <input className={inp} style={st} value={prop.condicaoPagamento} placeholder="Ex.: 50% de sinal + 50% na entrega, via PIX"
                   onChange={e=>setProp(p=>({...p,condicaoPagamento:e.target.value}))}/></label>
-              <label className="col-span-2"><span className={lab} style={{color:C.muted}}>Observações</span>
+              <label><span className={lab} style={{color:C.muted}}>Frete</span>
+                <select className={inp} style={st} value={prop.frete??OPC_FRETE[0]}
+                  onChange={e=>setProp(p=>({...p,frete:e.target.value}))}>
+                  {OPC_FRETE.map(o=><option key={o}>{o}</option>)}</select></label>
+              <label><span className={lab} style={{color:C.muted}}>Transfer</span>
+                <select className={inp} style={st} value={prop.transfer??OPC_TRANSFER[0]}
+                  onChange={e=>setProp(p=>({...p,transfer:e.target.value}))}>
+                  {OPC_TRANSFER.map(o=><option key={o}>{o}</option>)}</select></label>
+              <label className="col-span-2"><span className={lab} style={{color:C.muted}}>Tag e prendedor de tag</span>
+                <select className={inp} style={st} value={prop.tag??OPC_TAG[0]}
+                  onChange={e=>setProp(p=>({...p,tag:e.target.value}))}>
+                  {OPC_TAG.map(o=><option key={o}>{o}</option>)}</select></label>
+              <label className="col-span-2"><span className={lab} style={{color:C.muted}}>Informações complementares</span>
                 <textarea rows={4} className={inp} style={st} value={prop.observacoes}
-                  placeholder="Ex.: Frete por conta do cliente. Grade P ao GG."
+                  placeholder="Ex.: Grade P ao GG. Embalagem individual. Aprovação da peça-piloto antes do corte."
                   onChange={e=>setProp(p=>({...p,observacoes:e.target.value}))}/></label>
             </div>
             {semQtd.length>0&&(
