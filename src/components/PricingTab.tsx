@@ -31,6 +31,16 @@ interface Config {
   precoReal:   Record<string,number>   // preço de venda aprovado por código
   lastPlmImportId?: string
   proposta?: PropostaInfo
+  propostas?: PropostaSalva[]
+}
+interface LinhaProposta { cod:string; tipo:string; cores:{nome:string;qtd:number}[]; preco:number; qtd:number; total:number }
+interface PropostaSalva {
+  id:string; nome:string; criadaEm:string; atualizadaEm:string
+  exclVar:string[]            // seleção de modelos/cores (o que ficou desmarcado)
+  info:PropostaInfo           // cliente, condições, responsabilidades…
+  colecao:string
+  linhas:LinhaProposta[]      // valores como foram enviados (pra reimprimir igual)
+  totalPecas:number; totalValor:number
 }
 interface PropostaInfo {
   cliente:string; contato:string; numero:string; validadeDias:number
@@ -196,6 +206,8 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
             precoReal:p.precoReal??{},
             // Migra aviamentos/embalagem antigos para outrosCustos se existirem
             tecidos:p.tecidos??{},
+            // propostas salvas são do projeto, não vazam pra um projeto novo
+            propostas:[],
           }
         }
       }catch{}
@@ -211,6 +223,9 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   const [exclVar,setExclVar] = useState<Set<string>>(()=>new Set())
   const [openMontar,setOpenMontar] = useState(false)
   const [openProposta,setOpenProposta] = useState(false)
+  const [openSalvas,setOpenSalvas] = useState(false)
+  const [ativaId,setAtivaId] = useState<string|null>(null)
+  const [nomeSim,setNomeSim] = useState('')
   const toggleSet=(set:Set<string>,k:string)=>{const n=new Set(set);n.has(k)?n.delete(k):n.add(k);return n}
 
   useEffect(()=>{localStorage.setItem('prec-v9',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
@@ -706,41 +721,43 @@ ${m.ocItens.length>0?`<div class="section">
   const abrirProposta=()=>{
     if(reportResults.length===0){toast_('Nenhum modelo/cor selecionado para o relatório',false);return}
     // número novo a cada proposta; o resto vem do que ela preencheu da última vez
-    setProp(p=>({...p,cliente:p.cliente||clientName||'',numero:propostaDefault().numero}))
+    if(!ativaId){
+      setProp(p=>({...p,cliente:p.cliente||clientName||'',numero:propostaDefault().numero}))
+      setNomeSim(`Simulação ${(cfg.propostas?.length??0)+1}`)
+    }
     setOpenProposta(true)
   }
   const esc=(t:string)=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
 
   /* ── Proposta comercial para o cliente (sem custos/dificuldade) ── */
-  const printClientReport=()=>{
-    setCfg(c=>({...c,proposta:prop}))
-    setOpenProposta(false)
-    const itens=reportResults.filter(m=>!prop.ocultarSemQtd||m.totalPecas>0)
-    if(itens.length===0){toast_('Nenhum modelo com quantidade para a proposta',false);return}
-    const colecao = rows[0]?.colecao ?? ''
+  // Fotografa a seleção atual em linhas com os valores do momento
+  const montarLinhas=(info:PropostaInfo):LinhaProposta[]=>{
     const r2=(n:number)=>Math.round(n*100)/100
-    const linhas=itens.map(m=>({...m,preco:r2(m.precoReal),total:r2(m.precoReal)*m.totalPecas}))
-    const totalPecas=linhas.reduce((s,m)=>s+m.totalPecas,0)
-    const totalValor=linhas.reduce((s,m)=>s+m.total,0)
-    const hoje=new Date()
-    const validade=new Date(hoje.getTime()+prop.validadeDias*86400000)
+    return reportResults.filter(m=>!info.ocultarSemQtd||m.totalPecas>0).map(m=>({
+      cod:m.cod,tipo:m.tipo,cores:m.variantesSel.map(v=>({nome:v.nome,qtd:v.qtd})),
+      preco:r2(m.precoReal),qtd:m.totalPecas,total:r2(m.precoReal)*m.totalPecas}))
+  }
+  const imprimirProposta=(p:PropostaSalva)=>{
+    const info=p.info
+    const emissao=new Date(p.atualizadaEm)
+    const validade=new Date(emissao.getTime()+info.validadeDias*86400000)
     const fmt=(d:Date)=>d.toLocaleDateString('pt-BR')
     const logo=`${window.location.origin}/logo.png`
     const cond=[
-      ['Condição de pagamento',prop.condicaoPagamento],
-      ['Prazo de entrega',prop.prazoEntrega],
-      ['Validade da proposta',`${prop.validadeDias} dias (até ${fmt(validade)})`],
+      ['Condição de pagamento',info.condicaoPagamento],
+      ['Prazo de entrega',info.prazoEntrega],
+      ['Validade da proposta',`${info.validadeDias} dias (até ${fmt(validade)})`],
     ].filter(([,v])=>v.trim())
     const resp=[
-      ['Frete',prop.frete??''],
-      ['Tag e prendedor',prop.tag??''],
-      ['Transfer',prop.transfer??''],
+      ['Frete',info.frete??''],
+      ['Tag e prendedor',info.tag??''],
+      ['Transfer',info.transfer??''],
     ].filter(([,v])=>v.trim())
     const w=window.open('','_blank','width=1100,height=900')
     if(!w) return
     w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
-<title>Proposta ${esc(prop.numero)} — ${esc(prop.cliente||colecao)}</title>
+<title>Proposta ${esc(info.numero)} — ${esc(info.cliente||p.colecao)}</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;padding:36px 40px;font-size:11px}
@@ -784,34 +801,34 @@ ${m.ocItens.length>0?`<div class="section">
 </div>
 <div class="titulo">
   <h1>Proposta Comercial</h1>
-  <div class="num">Proposta nº <b>${esc(prop.numero)}</b><br>Emitida em ${fmt(hoje)}</div>
+  <div class="num">Proposta nº <b>${esc(info.numero)}</b><br>Emitida em ${fmt(emissao)}</div>
 </div>
 <div class="cli">
-  <div><span>Cliente</span><b>${esc(prop.cliente||'—')}</b></div>
-  <div><span>Coleção</span><b>${esc(colecao||'—')}</b></div>
-  ${prop.contato.trim()?`<div><span>A/C</span><b>${esc(prop.contato)}</b></div>`:''}
-  <div><span>Resumo</span><b>${linhas.length} modelo(s) · ${totalPecas} peças</b></div>
+  <div><span>Cliente</span><b>${esc(info.cliente||'—')}</b></div>
+  <div><span>Coleção</span><b>${esc(p.colecao||'—')}</b></div>
+  ${info.contato.trim()?`<div><span>A/C</span><b>${esc(info.contato)}</b></div>`:''}
+  <div><span>Resumo</span><b>${p.linhas.length} modelo(s) · ${p.totalPecas} peças</b></div>
 </div>
 <table>
   <thead><tr>
     <th>Referência</th><th>Produto</th><th>Cores (qtd.)</th><th>Preço unit.</th><th>Qtd.</th><th>Total</th>
   </tr></thead>
   <tbody>
-  ${linhas.map(m=>`
+  ${p.linhas.map(m=>`
     <tr>
       <td class="left"><b>${m.cod}</b></td>
       <td class="left">${esc(m.tipo)}</td>
-      <td class="left cores">${m.variantesSel.map(v=>`${esc(v.nome)} (${v.qtd})`).join('<br>')}</td>
+      <td class="left cores">${m.cores.map(v=>`${esc(v.nome)} (${v.qtd})`).join('<br>')}</td>
       <td class="price">${R$(m.preco)}</td>
-      <td>${m.totalPecas}</td>
+      <td>${m.qtd}</td>
       <td class="price">${R$(m.total)}</td>
     </tr>`).join('')}
   </tbody>
   <tfoot>
     <tr>
       <td class="left" colspan="4">VALOR TOTAL DO PEDIDO</td>
-      <td>${totalPecas}</td>
-      <td>${R$(totalValor)}</td>
+      <td>${p.totalPecas}</td>
+      <td>${R$(p.totalValor)}</td>
     </tr>
   </tfoot>
 </table>
@@ -825,16 +842,53 @@ ${m.ocItens.length>0?`<div class="section">
     ${resp.map(([k,v])=>`<p><span>${k}:</span> ${esc(v)}</p>`).join('')}
   </div>
 </div>
-${prop.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><div><h3>Informações complementares</h3><p>${esc(prop.observacoes)}</p></div></div>`:''}
+${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><div><h3>Informações complementares</h3><p>${esc(info.observacoes)}</p></div></div>`:''}
 <div class="assin">
   <div>Samanta Gomes Fashion Office</div>
-  <div>De acordo — ${esc(prop.cliente||'Cliente')}</div>
+  <div>De acordo — ${esc(info.cliente||'Cliente')}</div>
 </div>
-<div class="footer">Valores em reais (R$). Proposta nº ${esc(prop.numero)} · emitida em ${fmt(hoje)}.</div>
+<div class="footer">Valores em reais (R$). Proposta nº ${esc(info.numero)} · emitida em ${fmt(emissao)}.</div>
 <script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
 </body></html>`)
     w.document.close()
   }
+  // Salva (nova ou atualiza a ativa) e abre o PDF
+  const salvarEGerar=(comoNova:boolean)=>{
+    const linhas=montarLinhas(prop)
+    if(linhas.length===0){toast_('Nenhum modelo com quantidade para a proposta',false);return}
+    const agora=new Date().toISOString()
+    const lista=cfg.propostas??[]
+    const existente=!comoNova&&ativaId?lista.find(x=>x.id===ativaId):undefined
+    const salva:PropostaSalva={
+      id:existente?.id??uid(),
+      nome:(nomeSim.trim()||existente?.nome||`Simulação ${lista.length+1}`),
+      criadaEm:existente?.criadaEm??agora, atualizadaEm:agora,
+      exclVar:[...exclVar], info:prop, colecao:rows[0]?.colecao??'',
+      linhas, totalPecas:linhas.reduce((s,m)=>s+m.qtd,0), totalValor:linhas.reduce((s,m)=>s+m.total,0),
+    }
+    setCfg(c=>{
+      const l=c.propostas??[]
+      return{...c,proposta:prop,
+        propostas:existente?l.map(x=>x.id===salva.id?salva:x):[...l,salva]}
+    })
+    setAtivaId(salva.id)
+    setOpenProposta(false)
+    toast_(`✓ "${salva.nome}" salva em Propostas salvas`)
+    imprimirProposta(salva)
+  }
+  const carregarProposta=(p:PropostaSalva)=>{
+    setExclCod(new Set()); setExclVar(new Set(p.exclVar))
+    setProp({...propostaDefault(),...p.info}); setAtivaId(p.id); setNomeSim(p.nome)
+    setOpenSalvas(false); setOpenMontar(true)
+    toast_(`Editando "${p.nome}" — ajuste modelos/cores e gere a proposta de novo`)
+  }
+  const excluirProposta=(p:PropostaSalva)=>{
+    if(!window.confirm(`Excluir "${p.nome}"? Isso não pode ser desfeito.`)) return
+    setCfg(c=>({...c,propostas:(c.propostas??[]).filter(x=>x.id!==p.id)}))
+    if(ativaId===p.id){setAtivaId(null);setNomeSim('')}
+  }
+  const sairDaProposta=()=>{setAtivaId(null);setNomeSim('');setExclVar(new Set());setExclCod(new Set())}
+  const propostaAtiva=(cfg.propostas??[]).find(x=>x.id===ativaId)
 
   const exportPricingExcel=async()=>{
     if(reportResults.length===0){toast_('Nenhum modelo/cor selecionado para o relatório',false);return}
@@ -962,8 +1016,13 @@ ${prop.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
           style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
           <Printer size={13}/> Proposta para Cliente (PDF)
         </button>
+        <button onClick={()=>setOpenSalvas(s=>!s)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm ml-auto"
+          style={{color:C.text,border:`1px solid ${C.border}`,background:openSalvas?C.purpleBg:'transparent'}}>
+          {openSalvas?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Propostas salvas ({cfg.propostas?.length??0})
+        </button>
         <button onClick={()=>setOpenMontar(s=>!s)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ml-auto"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium"
           style={{background:openMontar?C.purple:C.purpleBg,border:`1px solid ${C.purple}`,color:openMontar?'#fff':C.purpleLt}}>
           {openMontar?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Escolher modelos e cores
         </button>
@@ -972,11 +1031,42 @@ ${prop.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
           style={{color:C.muted,border:`1px solid ${C.border}`}}>
           {openSettings?<ChevronUp size={13}/>:<ChevronDown size={13}/>} Configurações
         </button>
+        {propostaAtiva&&<p className="text-xs w-full flex items-center gap-3" style={{color:C.yellow}}>
+          ✎ Editando a proposta salva “{propostaAtiva.nome}”
+          <button onClick={sairDaProposta} className="underline" style={{color:C.teal}}>Sair (voltar para tudo marcado)</button>
+        </p>}
         {selecaoParcial&&<p className="text-xs w-full" style={{color:C.yellow}}>
           Relatórios com seleção: {reportResults.length} de {allResults.length} modelo(s) · {reportResults.reduce((s,r)=>s+r.totalPecas,0)} peças
         </p>}
         {toast&&<p className="text-xs w-full" style={{color:toast.ok?C.teal:C.pink}}>{toast.msg}</p>}
       </div>
+
+      {/* ── Propostas salvas ── */}
+      {openSalvas&&(
+        <div className="rounded-xl p-4 flex flex-col gap-2"
+          style={{background:C.surface2,border:`1px solid ${C.border}`}}>
+          {(cfg.propostas??[]).length===0&&
+            <p className="text-sm" style={{color:C.muted}}>Nenhuma proposta salva ainda. Toda proposta gerada fica guardada aqui.</p>}
+          {[...(cfg.propostas??[])].reverse().map(p=>(
+            <div key={p.id} className="flex items-center gap-3 flex-wrap rounded-lg px-3 py-2"
+              style={{background:ativaId===p.id?C.purpleBg:C.bg,border:`1px solid ${ativaId===p.id?C.purple:C.border}`}}>
+              <div className="flex-1 min-w-[220px]">
+                <p className="text-sm font-semibold" style={{color:C.text}}>{p.nome}</p>
+                <p className="text-xs" style={{color:C.muted}}>
+                  Nº {p.info.numero} · {p.info.cliente||'—'} · {new Date(p.atualizadaEm).toLocaleDateString('pt-BR')} ·{' '}
+                  {p.linhas.length} modelo(s) · {p.totalPecas} pç · {R$(p.totalValor)}
+                </p>
+              </div>
+              <button onClick={()=>imprimirProposta(p)} className="text-xs px-3 py-1.5 rounded-lg"
+                style={{color:C.text,border:`1px solid ${C.border}`}} title="Abre o PDF exatamente como foi salvo">PDF</button>
+              <button onClick={()=>carregarProposta(p)} className="text-xs px-3 py-1.5 rounded-lg"
+                style={{color:'#fff',background:C.purple}} title="Carrega a seleção e as condições para editar ou criar outra a partir dela">Abrir / editar</button>
+              <button onClick={()=>excluirProposta(p)} className="text-xs px-2 py-1.5 rounded-lg"
+                style={{color:C.pink,border:`1px solid ${C.border}`}}>Excluir</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Dados da proposta comercial ── */}
       {openProposta&&(()=>{
@@ -994,6 +1084,9 @@ ${prop.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
               <p className="text-xs" style={{color:C.muted}}>Preencha o que deve sair no PDF. Fica salvo para a próxima proposta.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
+              <label className="col-span-2"><span className={lab} style={{color:C.muted}}>Nome desta simulação (só pra você)</span>
+                <input className={inp} style={st} value={nomeSim} placeholder="Ex.: Simulação 2 — só cores escuras"
+                  onChange={e=>setNomeSim(e.target.value)}/></label>
               <label><span className={lab} style={{color:C.muted}}>Cliente</span>
                 <input className={inp} style={st} value={prop.cliente} onChange={e=>setProp(p=>({...p,cliente:e.target.value}))}/></label>
               <label><span className={lab} style={{color:C.muted}}>A/C (contato)</span>
@@ -1038,8 +1131,13 @@ ${prop.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
             <div className="flex justify-end gap-2">
               <button onClick={()=>setOpenProposta(false)} className="px-4 py-2 rounded-lg text-sm"
                 style={{color:C.muted,border:`1px solid ${C.border}`}}>Cancelar</button>
-              <button onClick={printClientReport} className="px-4 py-2 rounded-lg text-sm font-semibold"
-                style={{background:C.purple,color:'#fff'}}>Gerar proposta (PDF)</button>
+              {propostaAtiva&&(
+                <button onClick={()=>salvarEGerar(true)} className="px-4 py-2 rounded-lg text-sm"
+                  style={{color:C.text,border:`1px solid ${C.purple}`}}>Salvar como nova + PDF</button>
+              )}
+              <button onClick={()=>salvarEGerar(false)} className="px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{background:C.purple,color:'#fff'}}>
+                {propostaAtiva?`Atualizar "${propostaAtiva.nome}" + PDF`:'Salvar e gerar PDF'}</button>
             </div>
           </div>
         </div>
