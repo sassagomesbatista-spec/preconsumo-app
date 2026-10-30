@@ -226,6 +226,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   const [openSalvas,setOpenSalvas] = useState(false)
   const [ativaId,setAtivaId] = useState<string|null>(null)
   const [nomeSim,setNomeSim] = useState('')
+  const [modoSalvar,setModoSalvar] = useState(false)
   const toggleSet=(set:Set<string>,k:string)=>{const n=new Set(set);n.has(k)?n.delete(k):n.add(k);return n}
 
   useEffect(()=>{localStorage.setItem('prec-v9',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
@@ -718,7 +719,8 @@ ${m.ocItens.length>0?`<div class="section">
       frete:OPC_FRETE[0],tag:OPC_TAG[0],transfer:OPC_TRANSFER[0]}
   }
   const [prop,setProp]=useState<PropostaInfo>(()=>({...propostaDefault(),...(cfg.proposta??{})}))
-  const abrirProposta=()=>{
+  const abrirProposta=(soSalvar=false)=>{
+    setModoSalvar(soSalvar)
     if(reportResults.length===0){toast_('Nenhum modelo/cor selecionado para o relatório',false);return}
     // número novo a cada proposta; o resto vem do que ela preencheu da última vez
     if(!ativaId){
@@ -853,7 +855,7 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
     w.document.close()
   }
   // Salva (nova ou atualiza a ativa) e abre o PDF
-  const salvarEGerar=(comoNova:boolean)=>{
+  const salvarEGerar=(comoNova:boolean,gerarPdf=true)=>{
     const linhas=montarLinhas(prop)
     if(linhas.length===0){toast_('Nenhum modelo com quantidade para a proposta',false);return}
     const agora=new Date().toISOString()
@@ -873,8 +875,8 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
     })
     setAtivaId(salva.id)
     setOpenProposta(false)
-    toast_(`✓ "${salva.nome}" salva em Propostas salvas`)
-    imprimirProposta(salva)
+    toast_(`✓ "${salva.nome}" salva — veja em Propostas salvas`)
+    if(gerarPdf) imprimirProposta(salva)
   }
   const carregarProposta=(p:PropostaSalva)=>{
     setExclCod(new Set()); setExclVar(new Set(p.exclVar))
@@ -1011,7 +1013,7 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
           style={{background:C.greenBg,border:`1px solid ${C.green}`,color:C.green}}>
           <FileSpreadsheet size={13}/> Relatório Geral (Excel)
         </button>
-        <button onClick={abrirProposta}
+        <button onClick={()=>abrirProposta(false)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
           style={{background:C.purpleBg,border:`1px solid ${C.purple}`,color:C.purple}}>
           <Printer size={13}/> Proposta para Cliente (PDF)
@@ -1080,7 +1082,7 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
           <div className="rounded-2xl p-6 w-full max-w-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
             style={{background:C.surface,border:`1px solid ${C.border}`}} onClick={e=>e.stopPropagation()}>
             <div>
-              <h2 className="text-lg font-semibold" style={{color:C.text}}>Proposta para Cliente</h2>
+              <h2 className="text-lg font-semibold" style={{color:C.text}}>{modoSalvar?'Salvar simulação':'Proposta para Cliente'}</h2>
               <p className="text-xs" style={{color:C.muted}}>Preencha o que deve sair no PDF. Fica salvo para a próxima proposta.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1132,12 +1134,15 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
               <button onClick={()=>setOpenProposta(false)} className="px-4 py-2 rounded-lg text-sm"
                 style={{color:C.muted,border:`1px solid ${C.border}`}}>Cancelar</button>
               {propostaAtiva&&(
-                <button onClick={()=>salvarEGerar(true)} className="px-4 py-2 rounded-lg text-sm"
-                  style={{color:C.text,border:`1px solid ${C.purple}`}}>Salvar como nova + PDF</button>
+                <button onClick={()=>salvarEGerar(true,!modoSalvar)} className="px-4 py-2 rounded-lg text-sm"
+                  style={{color:C.text,border:`1px solid ${C.purple}`}}>
+                  {modoSalvar?'Salvar como nova simulação':'Salvar como nova + PDF'}</button>
               )}
-              <button onClick={()=>salvarEGerar(false)} className="px-4 py-2 rounded-lg text-sm font-semibold"
+              <button onClick={()=>salvarEGerar(false,!modoSalvar)} className="px-4 py-2 rounded-lg text-sm font-semibold"
                 style={{background:C.purple,color:'#fff'}}>
-                {propostaAtiva?`Atualizar "${propostaAtiva.nome}" + PDF`:'Salvar e gerar PDF'}</button>
+                {modoSalvar
+                  ?(propostaAtiva?`Salvar alterações em "${propostaAtiva.nome}"`:'💾 Salvar simulação')
+                  :(propostaAtiva?`Atualizar "${propostaAtiva.nome}" + PDF`:'Salvar e gerar PDF')}</button>
             </div>
           </div>
         </div>
@@ -1212,10 +1217,15 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
               </tbody>
             </table>
           </div>
+          <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={()=>abrirProposta(true)} className="px-4 py-2 rounded-lg text-sm font-semibold"
+            style={{background:C.purple,color:'#fff'}}>
+            💾 {propostaAtiva?`Salvar alterações em "${propostaAtiva.nome}"`:'Salvar simulação'}</button>
           <p className="text-xs" style={{color:C.yellow}}>
             Vai no relatório: {reportResults.length} modelo(s) · {reportResults.reduce((s,r)=>s+r.totalPecas,0)} peças ·{' '}
             {R$(reportResults.reduce((s,r)=>s+r.valorTotalCliente,0))}
           </p>
+          </div>
         </div>
       )}
 
@@ -1330,13 +1340,18 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
       )}
 
       {/* ═══ ÁREA PRINCIPAL: FICHAS DE CUSTO ═══════════════ */}
-      <div className="flex gap-4" style={{minHeight:0}}>
+      <div className="flex gap-4 items-start">
 
-        {/* Lista de modelos (esquerda) */}
-        <div className="flex flex-col gap-1 shrink-0" style={{width:200}}>
+        {/* Lista de modelos (esquerda) — acompanha a rolagem da página */}
+        <div className="flex flex-col gap-1 shrink-0 sticky top-4 overflow-y-auto pr-1"
+          style={{width:200,maxHeight:'calc(100vh - 32px)'}}>
           <p className="text-xs uppercase tracking-wide mb-1" style={{color:C.muted}}>Modelos</p>
           {allResults.map(r=>(
-            <button key={r.cod} onClick={()=>setSelectedCod(r.cod)}
+            <button key={r.cod} onClick={()=>{
+              setSelectedCod(r.cod)
+              const el=document.getElementById('ficha-custo')
+              if(el&&el.getBoundingClientRect().top<0) el.scrollIntoView({behavior:'smooth',block:'start'})
+            }}
               className="flex flex-col items-start px-3 py-2 rounded-lg text-left transition-all"
               style={{
                 background:selectedCod===r.cod?C.purpleBg:C.surface,
@@ -1359,7 +1374,7 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
           const cod=currentResult.cod
           const colecao=currentModel[1][0]?.colecao??''
           return(
-            <div className="flex-1 min-w-0 rounded-xl overflow-hidden"
+            <div id="ficha-custo" className="flex-1 min-w-0 rounded-xl overflow-hidden scroll-mt-4"
               style={{border:`1px solid ${C.border}`}}>
 
               {/* Header da ficha */}
@@ -1396,7 +1411,7 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
                 </div>
               </div>
 
-              <div className="overflow-y-auto" style={{maxHeight:'calc(100vh - 360px)'}}>
+              <div>
 
                 {/* ── Matéria Prima ── */}
                 <div>
