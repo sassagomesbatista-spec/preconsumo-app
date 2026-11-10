@@ -13,9 +13,9 @@ const C = {
   tealBg:   '#152828',
 }
 
-interface Props { rows: FabricRow[] }
+interface Props { rows: FabricRow[]; unidades?: Record<string, 'kg' | 'metro'> }
 
-export default function AnalysisTab({ rows }: Props) {
+export default function AnalysisTab({ rows, unidades = {} }: Props) {
   const [filters, setFilters] = useState({ tipoPeca: '', tecido: '', cor: '' })
 
   const options = useMemo(() => ({
@@ -31,7 +31,15 @@ export default function AnalysisTab({ rows }: Props) {
   ), [rows, filters])
 
   const totals = useMemo(() => ({
-    consumo: Math.round(filtered.reduce((s, r) => s + r.consumoTotal, 0) * 1000) / 1000,
+    // kg e metro somados separados
+    consumo: (() => {
+      let kg = 0, m = 0
+      filtered.forEach(r => { if (unidades[r.tecido] === 'metro') m += r.consumoTotal; else kg += r.consumoTotal })
+      const partes: string[] = []
+      if (kg > 0 || m === 0) partes.push(`${kg.toFixed(3)} kg`)
+      if (m > 0) partes.push(`${m.toFixed(3)} m`)
+      return partes.join(' + ')
+    })(),
     qtde:    filtered.reduce((s, r) => s + r.qtadeACortar, 0),
   }), [filtered])
 
@@ -71,7 +79,7 @@ export default function AnalysisTab({ rows }: Props) {
         {isFiltered && (
           <>
             <span style={{ color: C.muted }}>
-              Consumo total: <strong style={{ color: C.teal }}>{totals.consumo.toFixed(3)} kg</strong>
+              Consumo total: <strong style={{ color: C.teal }}>{totals.consumo}</strong>
             </span>
             {totals.qtde > 0 && (
               <span style={{ color: C.muted }}>

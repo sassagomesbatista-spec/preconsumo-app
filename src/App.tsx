@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Download, RefreshCw, FileUp, Table2, BarChart3, Sigma, Tag, ShoppingCart, AlertCircle, CheckCircle2, History, LogOut, Link2 } from 'lucide-react'
 import UploadZone from './components/UploadZone'
 import DataTable from './components/DataTable'
@@ -210,6 +210,15 @@ useEffect(() => {
     const newCods = [...importedCods].filter(c => !existingCods.has(c))
     return { rows: [...mantidas, ...atualizadas], newCods, consumosAlterados }
   }
+
+  // Unidade de cada tecido (kg ou metro): a da Precificação manda; sem ela, a da planilha
+  const unidadesTecido = useMemo(() => {
+    const out: Record<string, 'kg' | 'metro'> = {}
+    Object.entries(result?.plmData?.tecidos ?? {}).forEach(([n, t]) => { out[n] = t.unidade })
+    const cfgTec = (pricingConfig as { tecidos?: Record<string, { unidade?: 'kg' | 'metro' }> } | null)?.tecidos
+    Object.entries(cfgTec ?? {}).forEach(([n, t]) => { if (t?.unidade) out[n] = t.unidade })
+    return out
+  }, [result?.plmData, pricingConfig])
 
   const handleUpdateModels = useCallback(async (file: File) => {
     setLoading(true); setError(null); setUpdateMsg(null)
@@ -440,8 +449,8 @@ useEffect(() => {
 
             <div className="flex-1">
               {tab === 'dados'         && <DataTable rows={rows} onUpdate={handleUpdateQtade} onBulkUpdate={handleBulkUpdateQtade} />}
-              {tab === 'analise'      && <AnalysisTab rows={rows} />}
-              {tab === 'totais'       && <TotalsTab rows={rows} />}
+              {tab === 'analise'      && <AnalysisTab rows={rows} unidades={unidadesTecido} />}
+              {tab === 'totais'       && <TotalsTab rows={rows} unidades={unidadesTecido} />}
               {tab === 'precificacao' && <PricingTab key={pricingKey} rows={rows} plmData={result?.plmData} importId={result?.importId} initialConfig={pricingConfig as Parameters<typeof PricingTab>[0]['initialConfig']} onConfigChange={setPricingConfig} onResultsChange={setAtacadoPrecos} onAddModels={addModelsFromFile} clientName={clientName} />}
               {tab === 'revenda'      && <ResaleTab key={pricingKey} precos={atacadoPrecos} initialConfig={revendaConfig as Parameters<typeof ResaleTab>[0]['initialConfig']} onConfigChange={setRevendaConfig} />}
               {tab === 'historico'    && <HistoryTab currentProjectId={currentProjectId} onOpen={handleOpenHistoryProject} canDelete={isAdmin} />}

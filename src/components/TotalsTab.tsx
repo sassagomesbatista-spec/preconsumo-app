@@ -24,9 +24,12 @@ interface FabricEntry {
   cores: string[]; colorBreakdown: ColorData[]
 }
 
-interface Props { rows: FabricRow[] }
+interface Props { rows: FabricRow[]; unidades?: Record<string, 'kg' | 'metro'> }
 
-export default function TotalsTab({ rows }: Props) {
+// 'metro' -> 'm'; sem unidade cadastrada, assume kg (comportamento antigo)
+const un = (u?: 'kg' | 'metro') => (u === 'metro' ? 'm' : 'kg')
+
+export default function TotalsTab({ rows, unidades = {} }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const summary = useMemo<FabricEntry[]>(() => {
@@ -60,10 +63,15 @@ export default function TotalsTab({ rows }: Props) {
       .sort((a, b) => b.consumoTotal - a.consumoTotal)
   }, [rows])
 
-  const consumoGeral = useMemo(
-    () => Math.round(summary.reduce((s, r) => s + r.consumoTotal, 0) * 1000) / 1000,
-    [summary]
-  )
+  // kg e metro não podem ser somados: um total por unidade
+  const consumoGeral = useMemo(() => {
+    let kg = 0, m = 0
+    summary.forEach(r => { if (unidades[r.tecido] === 'metro') m += r.consumoTotal; else kg += r.consumoTotal })
+    const partes: string[] = []
+    if (kg > 0 || m === 0) partes.push(`${kg.toFixed(3)} kg`)
+    if (m > 0) partes.push(`${m.toFixed(3)} m`)
+    return partes.join(' + ')
+  }, [summary, unidades])
 
   const totalPecas = useMemo(
     () => new Set(rows.map(r => r.codigo)).size,
@@ -80,7 +88,7 @@ export default function TotalsTab({ rows }: Props) {
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Consumo Total Geral" value={consumoGeral.toFixed(3)} unit="kg"
+        <StatCard label="Consumo Total Geral" value={consumoGeral}
           bg={C.tealBg} border={C.teal} text={C.teal} />
         <StatCard label="Total de Peças" value={String(totalPecas)}
           bg={C.purpleBg} border={C.purple} text={C.purpleLt} />
@@ -95,7 +103,7 @@ export default function TotalsTab({ rows }: Props) {
         <table className="w-full text-sm border-collapse">
           <thead style={{ position: 'sticky', top: 0 }}>
             <tr>
-              {['','Tecido','Consumo Total (kg)','Qtd. Peças','Qtd. Cores','Cores'].map((h, i) => (
+              {['','Tecido','Consumo Total','Qtd. Peças','Qtd. Cores','Cores'].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left font-semibold text-xs"
                   style={{ background: C.surface2, borderBottom: `1px solid ${C.border}`, color: C.muted }}>
                   {h}
@@ -118,6 +126,7 @@ export default function TotalsTab({ rows }: Props) {
                     <td className="px-4 py-2.5 font-medium" style={{ color: C.text }}>{s.tecido}</td>
                     <td className="px-4 py-2.5 text-right">
                       <span className="font-bold text-base" style={{ color: C.teal }}>{s.consumoTotal.toFixed(3)}</span>
+                      <span className="text-xs ml-1" style={{ color: C.muted }}>{un(unidades[s.tecido])}</span>
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold" style={{ color: C.purpleLt }}>{s.qtdPecas}</td>
                     <td className="px-4 py-2.5 text-right font-semibold" style={{ color: C.pink }}>{s.qtdCores}</td>
@@ -143,7 +152,7 @@ export default function TotalsTab({ rows }: Props) {
                             <div key={cb.cor} className="rounded-lg px-3 py-2 text-xs"
                               style={{ background: C.surface2, border: `1px solid ${C.border}` }}>
                               <p className="font-medium truncate" style={{ color: C.text }}>{cb.cor}</p>
-                              <p className="font-bold mt-0.5" style={{ color: C.teal }}>{cb.consumo.toFixed(3)} kg</p>
+                              <p className="font-bold mt-0.5" style={{ color: C.teal }}>{cb.consumo.toFixed(3)} {un(unidades[s.tecido])}</p>
                               <p style={{ color: C.muted }}>{cb.pecas} peças</p>
                             </div>
                           ))}
