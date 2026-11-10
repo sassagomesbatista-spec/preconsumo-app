@@ -187,53 +187,63 @@ useEffect(() => {
   // permanecer o MESMO projeto no Histórico (autosave continua
   // sobrescrevendo o mesmo registro), e o preço/custo/nº de operações já
   // preenchidos pros modelos antigos não serem tocados.
+  // Junta a planilha nova com o projeto: modelos novos entram; modelos que já
+  // existem passam a usar as linhas da planilha (consumo/tecido atualizados),
+  // mas a quantidade a cortar digitada no app é mantida (por modelo+variante+tecido).
+  const mergeImported = (prev: FabricRow[], imported: FabricRow[]) => {
+    const key = (r: FabricRow) => `${r.codigo}||${r.variante}||${r.tecido}`
+    const qtdPorChave = new Map(prev.map(r => [key(r), r.qtadeACortar]))
+    const qtdPorVariante = new Map(prev.map(r => [`${r.codigo}||${r.variante}`, r.qtadeACortar]))
+    const existingCods = new Set(prev.map(r => r.codigo))
+    const importedCods = new Set(imported.map(r => r.codigo))
+    const prevPorChave = new Map(prev.map(r => [key(r), r]))
+    let consumosAlterados = 0
+    const atualizadas = imported.map(r => {
+      if (!existingCods.has(r.codigo)) return r
+      const antiga = prevPorChave.get(key(r))
+      if (antiga && Math.abs((antiga.consumo || 0) - (r.consumo || 0)) > 1e-9) consumosAlterados++
+      const q = qtdPorChave.get(key(r)) ?? qtdPorVariante.get(`${r.codigo}||${r.variante}`) ?? r.qtadeACortar
+      return { ...r, id: antiga?.id ?? r.id, qtadeACortar: q, consumoTotal: (r.consumo || 0) * (q || 0) }
+    })
+    // modelos que estão no app mas não vieram na planilha continuam como estão
+    const mantidas = prev.filter(r => !importedCods.has(r.codigo))
+    const newCods = [...importedCods].filter(c => !existingCods.has(c))
+    return { rows: [...mantidas, ...atualizadas], newCods, consumosAlterados }
+  }
+
   const handleUpdateModels = useCallback(async (file: File) => {
     setLoading(true); setError(null); setUpdateMsg(null)
     try {
       const imported = await importExcel(file)
-      const existingCods = new Set(rows.map(r => r.codigo))
-      const newRows = imported.rows.filter(r => !existingCods.has(r.codigo))
-      const newCods = [...new Set(newRows.map(r => r.codigo))]
-
-      if (newCods.length === 0) {
-        setUpdateMsg('Nenhum modelo novo encontrado nessa planilha — todos os códigos já estavam neste projeto.')
-        return
-      }
-
-      setRows(prev => [...prev, ...newRows])
-      // Atualiza plmData/importId pra aba Precificação aplicar os preços do
-      // arquivo sozinha — mas o apply automático (ver applyPlmDataFillGaps
-      // em PricingTab.tsx) só PREENCHE tecido/custo que ainda não tem
-      // preço configurado, nunca sobrescreve o que já existe. Preço de
-      // tecido que um modelo antigo já usa (e que ela já ajustou na mão)
-      // fica intocado mesmo que o valor na planilha nova seja diferente.
+      const { rows: merged, newCods, consumosAlterados } = mergeImported(rows, imported.rows)
+      setRows(merged)
+      // plmData/importId novos: a Precificação preenche preços que faltam e,
+      // se algum preço de tecido mudou, pergunta antes de trocar.
       setResult(prev => prev ? {
         ...prev,
         extraColumns: [...new Set([...prev.extraColumns, ...imported.extraColumns])],
         plmData: imported.plmData,
         importId: imported.importId,
       } : imported)
-      setUpdateMsg(`✓ ${newCods.length} modelo(s) novo(s) adicionado(s): ${newCods.join(', ')}. Modelos, preços e Nº de Operações que já estavam neste projeto não foram alterados — o preço dos tecidos usados só pelos modelos novos foi preenchido automaticamente a partir da planilha.`)
-      setTab('dados')
+      const partes = [
+        newCods.length ? `${newCods.length} modelo(s) novo(s): ${newCods.join(', ')}` : 'nenhum modelo novo',
+        consumosAlterados ? `${consumosAlterados} consumo(s) atualizado(s) nos modelos existentes` : 'consumos sem mudança',
+      ]
+      setUpdateMsg(`✓ Planilha aplicada — ${partes.join(' · ')}. Quantidades a cortar, preço final e Nº de Operações foram mantidos. Se algum preço de tecido mudou, a aba Precificação vai pedir sua confirmação.`)
+      setTab(newCods.length ? 'dados' : 'precificacao')
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
   }, [rows])
 
-  // Usado pelo botão "Importar PLM (Excel)" da aba Precificação: além de
-  // atualizar preços, adiciona as referências da planilha que ainda não estão
-  // no projeto (antes ele só atualizava preço e os modelos novos sumiam).
+  // Usado pelo botão "Importar PLM (Excel)" da aba Precificação
   const addModelsFromFile = useCallback(async (file: File): Promise<string[]> => {
     const imported = await importExcel(file)
-    const existingCods = new Set(rows.map(r => r.codigo))
-    const newRows = imported.rows.filter(r => !existingCods.has(r.codigo))
-    const newCods = [...new Set(newRows.map(r => r.codigo))]
-    if (newCods.length > 0) {
-      setRows(prev => [...prev, ...newRows])
-      setResult(prev => prev ? {
-        ...prev,
-        extraColumns: [...new Set([...prev.extraColumns, ...imported.extraColumns])],
-      } : imported)
-    }
+    const { rows: merged, newCods } = mergeImported(rows, imported.rows)
+    setRows(merged)
+    setResult(prev => prev ? {
+      ...prev,
+      extraColumns: [...new Set([...prev.extraColumns, ...imported.extraColumns])],
+    } : imported)
     return newCods
   }, [rows])
 

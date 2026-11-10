@@ -227,6 +227,8 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
   const [ativaId,setAtivaId] = useState<string|null>(null)
   const [nomeSim,setNomeSim] = useState('')
   const [modoSalvar,setModoSalvar] = useState(false)
+  // Tecidos cujo preço/unidade na planilha nova é diferente do que está no app
+  const [difTecidos,setDifTecidos] = useState<{nome:string;atual:FabricCost;novo:FabricCost;aplicar:boolean}[]>([])
   const toggleSet=(set:Set<string>,k:string)=>{const n=new Set(set);n.has(k)?n.delete(k):n.add(k);return n}
 
   useEffect(()=>{localStorage.setItem('prec-v9',JSON.stringify(cfg)); onConfigChange?.(cfg)},[cfg])
@@ -434,7 +436,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     setCfg(p=>{
       const nt={...p.tecidos}
       Object.entries(plm.tecidos).forEach(([nome,info])=>{
-        nt[nome]={...info,gramatura:nt[nome]?.gramatura??info.gramatura}
+        if(!nt[nome]) nt[nome]=info   // existentes com preço diferente: confirmação em difTecidos
       })
       // Substitui (não acumula) os aviamentos de cada tipo de peça pelos do
       // arquivo importado — a config de precificação persiste num cofre
@@ -473,12 +475,27 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
     return true
   }
 
+  const verificarDifTecidos=(plm:PlmData)=>{
+    const difs=Object.entries(plm.tecidos)
+      .filter(([nome,novo])=>{const a=cfg.tecidos[nome];return a&&(Math.abs(a.preco-novo.preco)>0.0001||a.unidade!==novo.unidade)})
+      .map(([nome,novo])=>({nome,atual:cfg.tecidos[nome],novo,aplicar:true}))
+    setDifTecidos(difs)
+    return difs.length
+  }
+  const aplicarDifTecidos=()=>{
+    const sel=difTecidos.filter(d=>d.aplicar)
+    setCfg(p=>{const nt={...p.tecidos};sel.forEach(d=>{nt[d.nome]={...d.novo,gramatura:p.tecidos[d.nome]?.gramatura??d.novo.gramatura}});return{...p,tecidos:nt}})
+    setDifTecidos([])
+    toast_(sel.length?`✓ Preço atualizado em ${sel.length} tecido(s).`:'Preços do app mantidos.')
+  }
+
   // Aplica automaticamente os dados de PLM já presentes no arquivo importado na aba "Dados"
   useEffect(()=>{
     if(!importId||!plmData) return
     if(cfg.lastPlmImportId===importId) return
     const applied=applyPlmDataFillGaps(plmData)
     setCfg(p=>({...p,lastPlmImportId:importId}))
+    verificarDifTecidos(plmData)
     if(applied) toast_('✓ Preços de tecido e outros custos carregados automaticamente do arquivo importado.')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[importId])
@@ -490,6 +507,7 @@ export default function PricingTab({rows,plmData,importId,initialConfig,onConfig
       if(!wb.Sheets['Tecidos']){toast_('Aba "Tecidos" não encontrada.',false);return}
       const plm=extractPlmData(wb)
       applyPlmData(plm)
+      verificarDifTecidos(plm)
       let novos:string[]=[]
       try{ novos=await onAddModels?.(file)??[] }catch{ /* sem aba de variantes: só preços */ }
       toast_(novos.length>0
@@ -1042,6 +1060,38 @@ ${info.observacoes.trim()?`<div class="box" style="grid-template-columns:1fr"><d
         </p>}
         {toast&&<p className="text-xs w-full" style={{color:toast.ok?C.teal:C.pink}}>{toast.msg}</p>}
       </div>
+
+      {/* ── Preços de tecido diferentes na planilha nova ── */}
+      {difTecidos.length>0&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:'rgba(0,0,0,.6)'}}>
+          <div className="rounded-2xl p-6 w-full max-w-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+            style={{background:C.surface,border:`1px solid ${C.border}`}}>
+            <div>
+              <h2 className="text-lg font-semibold" style={{color:C.text}}>A planilha tem preços de tecido diferentes</h2>
+              <p className="text-xs" style={{color:C.muted}}>Marque os que devem ser trocados pelo valor da planilha. Os desmarcados ficam como estão no app.</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {difTecidos.map((d,i)=>(
+                <label key={d.nome} className="flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer"
+                  style={{background:C.bg,border:`1px solid ${d.aplicar?C.purple:C.border}`}}>
+                  <input type="checkbox" checked={d.aplicar} style={{accentColor:C.purple}}
+                    onChange={()=>setDifTecidos(l=>l.map((x,j)=>j===i?{...x,aplicar:!x.aplicar}:x))}/>
+                  <span className="flex-1 text-sm" style={{color:C.text}}>{d.nome}</span>
+                  <span className="text-xs line-through" style={{color:C.muted}}>{R$(d.atual.preco)}/{d.atual.unidade==='metro'?'m':'kg'}</span>
+                  <span className="text-xs">→</span>
+                  <span className="text-sm font-semibold" style={{color:C.yellow}}>{R$(d.novo.preco)}/{d.novo.unidade==='metro'?'m':'kg'}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={()=>{setDifTecidos([]);toast_('Preços do app mantidos.')}} className="px-4 py-2 rounded-lg text-sm"
+                style={{color:C.muted,border:`1px solid ${C.border}`}}>Manter todos do app</button>
+              <button onClick={aplicarDifTecidos} className="px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{background:C.purple,color:'#fff'}}>Atualizar marcados</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Propostas salvas ── */}
       {openSalvas&&(
